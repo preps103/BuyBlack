@@ -5,6 +5,7 @@ export const metadata: Metadata = {
   title: "BuyBlack Marketplace",
   description:
     "Discover, share, and support exceptional Black-owned businesses, creators, and brands.",
+  applicationName: "BuyBlack",
 };
 
 export default function RootLayout({
