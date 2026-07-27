@@ -1,0 +1,7 @@
+{
+  "name": "BuyBlack Marketplace",
+  "description": "The premier digital marketplace and boutique directory for discovering, sharing, and supporting exceptional Black-owned businesses, creators, and brands.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
