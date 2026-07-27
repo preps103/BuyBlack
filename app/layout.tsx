@@ -6,6 +6,23 @@ export const metadata: Metadata = {
   description:
     "Discover, share, and support exceptional Black-owned businesses, creators, and brands.",
   applicationName: "BuyBlack",
+  icons: {
+    icon: [
+      {
+        url: "/buyblack-favicon-20260726.png",
+        type: "image/png",
+        sizes: "64x64",
+      },
+    ],
+    shortcut: "/buyblack-favicon-20260726.png",
+    apple: [
+      {
+        url: "/buyblack-favicon-20260726.png",
+        type: "image/png",
+        sizes: "64x64",
+      },
+    ],
+  },
 };
 
 export default function RootLayout({
