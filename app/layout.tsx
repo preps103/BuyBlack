@@ -6,20 +6,31 @@ export const metadata: Metadata = {
   description:
     "Discover, share, and support exceptional Black-owned businesses, creators, and brands.",
   applicationName: "BuyBlack",
+  manifest: "/site.webmanifest",
   icons: {
     icon: [
       {
-        url: "/buyblack-favicon-20260726.png",
+        url: "/favicon-20260727.ico",
+        type: "image/x-icon",
+        sizes: "any",
+      },
+      {
+        url: "/favicon-32x32-20260727.png",
         type: "image/png",
-        sizes: "64x64",
+        sizes: "32x32",
+      },
+      {
+        url: "/favicon-16x16-20260727.png",
+        type: "image/png",
+        sizes: "16x16",
       },
     ],
-    shortcut: "/buyblack-favicon-20260726.png",
+    shortcut: "/favicon-20260727.ico",
     apple: [
       {
-        url: "/buyblack-favicon-20260726.png",
+        url: "/apple-touch-icon-20260727.png",
         type: "image/png",
-        sizes: "64x64",
+        sizes: "180x180",
       },
     ],
   },
