@@ -26,7 +26,8 @@ type AuthUser = {
   lastName?: string | null;
 };
 
-const GOODOS_AUTH_ORIGIN = "https://base.goodos.app";
+const GOODOS_AUTH_ORIGIN = "";
+const GOODOS_PUBLIC_ORIGIN = "https://base.goodos.app";
 
 export default function Header({
   activeView,
@@ -160,7 +161,7 @@ export default function Header({
 
       if (data.mfa?.required) {
         setAuthError("Password verified. Complete GoodOS verification to continue.");
-        setMfaUrl(data.mfa.enrollmentUrl || `${GOODOS_AUTH_ORIGIN}/mfa-enroll`);
+        setMfaUrl(data.mfa.enrollmentUrl || `${GOODOS_PUBLIC_ORIGIN}/mfa-enroll`);
         return;
       }
 
