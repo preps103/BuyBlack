@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { Loader2, LogIn, ShieldCheck, X } from "lucide-react";
 
-const GOODOS_AUTH_ORIGIN = "https://base.goodos.app";
+const GOODOS_AUTH_ORIGIN = "";
+const GOODOS_PUBLIC_ORIGIN = "https://base.goodos.app";
 
 export default function AuthModal({
   open,
@@ -44,7 +45,7 @@ export default function AuthModal({
       if (payload.mfa?.required) {
         setError("Password verified. Complete GoodOS verification to continue.");
         setMfaUrl(
-          payload.mfa.enrollmentUrl || `${GOODOS_AUTH_ORIGIN}/mfa-enroll`,
+          payload.mfa.enrollmentUrl || `${GOODOS_PUBLIC_ORIGIN}/mfa-enroll`,
         );
         return;
       }

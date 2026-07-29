@@ -35,7 +35,7 @@ import type {
   Review,
 } from "./types";
 
-const GOODOS_AUTH_ORIGIN = "https://base.goodos.app";
+const GOODOS_AUTH_ORIGIN = "";
 
 const US_STATES = [
   "Alabama",
