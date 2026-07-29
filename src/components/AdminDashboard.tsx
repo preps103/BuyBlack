@@ -1,252 +1,505 @@
-import React, { useState } from "react";
-import { 
-  ShieldCheck, Phone, CheckCircle2, XCircle, Search, 
-  Filter, Calendar, Clock, ChevronRight, User, Mail, Link as LinkIcon
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  CheckCircle2,
+  CreditCard,
+  ExternalLink,
+  Loader2,
+  PackagePlus,
+  RefreshCw,
+  ShieldAlert,
+  Store,
+  XCircle,
 } from "lucide-react";
+import { apiRequest, money } from "../api";
+import type {
+  Business,
+  DashboardData,
+  Product,
+  ProviderReadiness,
+} from "../types";
 
-const INITIAL_APPS = [
-  {
-    id: "app-1049",
-    businessName: "Soul Full Kitchen",
-    ownerName: "Marcus Johnson",
-    email: "marcus@soulfullkitchen.co",
-    phone: "(555) 234-9812",
-    category: "Food & Beverage",
-    submittedDate: "Today, 9:24 AM",
-    status: "pending",
-    location: "Atlanta, GA",
-    description: "A modern soul food experience focusing on healthy, locally sourced ingredients without sacrificing flavor.",
-    website: "soulfullkitchen.co"
-  },
-  {
-    id: "app-1048",
-    businessName: "Lumina Organics",
-    ownerName: "Sarah Adebayo",
-    email: "hello@luminaorganics.com",
-    phone: "(555) 876-1200",
-    category: "Beauty & Wellness",
-    submittedDate: "Yesterday, 3:15 PM",
-    status: "pending",
-    location: "Brooklyn, NY",
-    description: "Handcrafted, plant-based skincare products made with ingredients sourced directly from West Africa.",
-    website: "luminaorganics.com"
-  },
-  {
-    id: "app-1045",
-    businessName: "Bronzeville Books",
-    ownerName: "David Wright",
-    email: "dwright@bronzevillebooks.com",
-    phone: "(555) 441-9921",
-    category: "Books & Literature",
-    submittedDate: "Oct 12, 11:00 AM",
-    status: "pending",
-    location: "Chicago, IL",
-    description: "An independent bookstore specializing in African American literature, history, and children's books.",
-    website: "bronzevillebooks.com"
-  }
-];
+const emptyProduct = {
+  businessId: "",
+  name: "",
+  description: "",
+  price: "",
+  inventoryCount: "",
+  imageUrl: "",
+};
 
-export default function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState<'pending' | 'verified' | 'rejected'>('pending');
-  const [applications, setApplications] = useState(INITIAL_APPS);
-  const [searchQuery, setSearchQuery] = useState("");
-
-  const handleUpdateStatus = (id: string, newStatus: string) => {
-    setApplications(prev => prev.map(app => 
-      app.id === id ? { ...app, status: newStatus } : app
-    ));
-  };
-  
-  const filteredApps = applications.filter(app => {
-    const matchesTab = app.status === activeTab;
-    const matchesSearch = app.businessName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          app.ownerName.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesTab && matchesSearch;
-  });
-
-  const pendingCount = applications.filter(a => a.status === 'pending').length;
-  const verifiedCount = applications.filter(a => a.status === 'verified').length;
-  const rejectedCount = applications.filter(a => a.status === 'rejected').length;
-
+function ProviderCard({ provider }: { provider: ProviderReadiness }) {
+  const ready = provider.configured && provider.webhooksConfigured;
   return (
-    <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
+    <div className="rounded-2xl border border-gray-200 bg-white p-5">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-rust/30 text-rust-dark text-[10px] font-bold tracking-wider uppercase mb-3 bg-rust/5">
-            <ShieldCheck className="w-3.5 h-3.5" /> Merchant Portal
-          </div>
-          <h2 className="text-3xl font-serif font-bold text-gray-900 tracking-tight">Listing Verification Center</h2>
-          <p className="text-gray-500 mt-2 text-sm font-medium max-w-2xl">
-            Review and vet incoming applications to ensure all businesses on our platform meet our community standards and authenticity requirements.
+          <p className="font-bold capitalize">
+            {provider.provider === "stripe" ? "Stripe / cards" : "PayPal"}
+          </p>
+          <p className="mt-1 text-xs uppercase tracking-wider text-gray-500">
+            {provider.mode} mode
           </p>
         </div>
-        
-        <div className="flex items-center gap-4">
-          <div className="bg-white border border-gray-200 rounded-xl px-4 py-2 flex items-center gap-3 shadow-sm">
-            <div className="bg-rust/10 p-2 rounded-lg text-rust">
-              <Calendar className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Pending Calls</div>
-              <div className="font-bold text-gray-900">4 Scheduled</div>
-            </div>
-          </div>
-        </div>
+        <span
+          className={`rounded-full px-3 py-1 text-xs font-bold ${
+            ready
+              ? "bg-green-50 text-green-700"
+              : "bg-amber-50 text-amber-700"
+          }`}
+        >
+          {ready ? "Ready" : "Setup needed"}
+        </span>
       </div>
-
-      {/* Main Content Area */}
-      <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden flex flex-col md:flex-row min-h-[600px]">
-        
-        {/* Sidebar Navigation */}
-        <div className="w-full md:w-64 bg-gray-50 border-b md:border-b-0 md:border-r border-gray-200 p-6 flex flex-col">
-          <h3 className="text-xs font-bold text-gray-900 uppercase tracking-wider mb-4">Application Status</h3>
-          <nav className="space-y-1.5 flex-1">
-            <button 
-              onClick={() => setActiveTab('pending')}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold transition-colors ${
-                activeTab === 'pending' ? 'bg-white text-rust shadow-sm border border-gray-200' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4" /> Pending
-              </div>
-              {pendingCount > 0 && <span className="bg-rust text-white text-[10px] py-0.5 px-2 rounded-full">{pendingCount}</span>}
-            </button>
-            <button 
-              onClick={() => setActiveTab('verified')}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold transition-colors ${
-                activeTab === 'verified' ? 'bg-white text-green-700 shadow-sm border border-gray-200' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4" /> Verified
-              </div>
-              {verifiedCount > 0 && <span className="bg-green-600 text-white text-[10px] py-0.5 px-2 rounded-full">{verifiedCount}</span>}
-            </button>
-            <button 
-              onClick={() => setActiveTab('rejected')}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold transition-colors ${
-                activeTab === 'rejected' ? 'bg-white text-red-700 shadow-sm border border-gray-200' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <XCircle className="w-4 h-4" /> Rejected
-              </div>
-              {rejectedCount > 0 && <span className="bg-red-600 text-white text-[10px] py-0.5 px-2 rounded-full">{rejectedCount}</span>}
-            </button>
-          </nav>
-        </div>
-
-        {/* Dashboard List */}
-        <div className="flex-1 p-6 md:p-8 bg-white">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="font-serif text-xl font-bold text-gray-900 capitalize">
-              {activeTab} ({filteredApps.length})
-            </h3>
-            <div className="flex gap-2">
-              <div className="relative">
-                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input 
-                  type="text" 
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search businesses..." 
-                  className="pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-rust focus:ring-1 focus:ring-rust transition-all"
-                />
-              </div>
-              <button className="bg-gray-50 border border-gray-200 text-gray-700 p-2 rounded-lg hover:bg-gray-100 transition-colors">
-                <Filter className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            {filteredApps.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                <p>No applications found in this category.</p>
-              </div>
-            ) : filteredApps.map((app) => (
-              <div key={app.id} className="border border-gray-100 rounded-2xl p-6 hover:border-rust/30 hover:shadow-md transition-all group">
-                <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-6">
-                  
-                  {/* Left Column: Business & Owner Details */}
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <h4 className="font-serif text-xl font-bold text-gray-900 group-hover:text-rust transition-colors">{app.businessName}</h4>
-                      <span className="bg-mustard/10 text-mustard border border-mustard/20 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">
-                        {app.category}
-                      </span>
-                    </div>
-                    
-                    <p className="text-sm text-gray-600 mb-4 line-clamp-2 max-w-2xl">{app.description}</p>
-                    
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 bg-gray-50 rounded-xl p-4 border border-gray-100">
-                      <div>
-                        <div className="text-[10px] text-gray-500 uppercase tracking-wider font-bold mb-1 flex items-center gap-1"><User className="w-3 h-3"/> Owner</div>
-                        <div className="text-sm font-semibold text-gray-900">{app.ownerName}</div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] text-gray-500 uppercase tracking-wider font-bold mb-1 flex items-center gap-1"><Mail className="w-3 h-3"/> Email</div>
-                        <div className="text-sm font-medium text-gray-700 truncate"><a href={`mailto:${app.email}`} className="hover:text-rust">{app.email}</a></div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] text-gray-500 uppercase tracking-wider font-bold mb-1 flex items-center gap-1"><Phone className="w-3 h-3"/> Phone</div>
-                        <div className="text-sm font-medium text-gray-700">{app.phone}</div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] text-gray-500 uppercase tracking-wider font-bold mb-1 flex items-center gap-1"><LinkIcon className="w-3 h-3"/> Website</div>
-                        <div className="text-sm font-medium text-rust truncate"><a href={`https://${app.website}`} target="_blank" rel="noreferrer" className="hover:underline">{app.website}</a></div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right Column: Actions */}
-                  <div className="flex flex-col gap-3 xl:w-48 shrink-0">
-                    <div className="text-[11px] font-medium text-gray-500 text-right mb-1">
-                      Submitted: {app.submittedDate}
-                    </div>
-                    <button 
-                      onClick={() => alert(`Scheduling confirmation call with ${app.ownerName} for ${app.businessName}...`)}
-                      className="w-full bg-[#1C3627] hover:bg-[#13251a] text-white py-2.5 px-4 rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2 shadow-sm"
-                    >
-                      <Phone className="w-4 h-4" /> Schedule Call
-                    </button>
-                    {activeTab === 'pending' && (
-                      <div className="grid grid-cols-2 gap-2">
-                        <button 
-                          onClick={() => handleUpdateStatus(app.id, 'verified')}
-                          className="bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 py-2 rounded-xl text-[13px] font-bold transition-colors flex items-center justify-center gap-1"
-                        >
-                          <CheckCircle2 className="w-4 h-4" /> Verify
-                        </button>
-                        <button 
-                          onClick={() => handleUpdateStatus(app.id, 'rejected')}
-                          className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 py-2 rounded-xl text-[13px] font-bold transition-colors flex items-center justify-center gap-1"
-                        >
-                          <XCircle className="w-4 h-4" /> Reject
-                        </button>
-                      </div>
-                    )}
-                    {activeTab !== 'pending' && (
-                       <button 
-                         onClick={() => handleUpdateStatus(app.id, 'pending')}
-                         className="bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 py-2 rounded-xl text-[13px] font-bold transition-colors flex items-center justify-center gap-1 w-full mt-2"
-                       >
-                         <Clock className="w-4 h-4" /> Mark Pending
-                       </button>
-                    )}
-                  </div>
-                  
-                </div>
-              </div>
-            ))}
-          </div>
-          
-        </div>
+      <div className="mt-4 space-y-2 text-sm">
+        <p className="flex items-center gap-2">
+          {provider.configured ? (
+            <CheckCircle2 className="h-4 w-4 text-green-600" />
+          ) : (
+            <XCircle className="h-4 w-4 text-amber-600" />
+          )}
+          Checkout credentials
+        </p>
+        <p className="flex items-center gap-2">
+          {provider.webhooksConfigured ? (
+            <CheckCircle2 className="h-4 w-4 text-green-600" />
+          ) : (
+            <XCircle className="h-4 w-4 text-amber-600" />
+          )}
+          Payment confirmation webhook
+        </p>
       </div>
     </div>
   );
 }
 
+export default function AdminDashboard({
+  onCatalogChanged,
+}: {
+  onCatalogChanged: () => Promise<void>;
+}) {
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [working, setWorking] = useState("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [productForm, setProductForm] = useState(emptyProduct);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      setData(await apiRequest<DashboardData>("/api/marketplace/dashboard"));
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Merchant data could not be loaded.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const verifiedBusinesses = useMemo(
+    () => data?.businesses.filter((business) => business.status === "verified") || [],
+    [data],
+  );
+
+  useEffect(() => {
+    if (!productForm.businessId && verifiedBusinesses[0]) {
+      setProductForm((current) => ({
+        ...current,
+        businessId: verifiedBusinesses[0].id,
+      }));
+    }
+  }, [productForm.businessId, verifiedBusinesses]);
+
+  const updateStatus = async (
+    business: Business,
+    status: "verified" | "rejected" | "pending",
+  ) => {
+    setWorking(business.id);
+    setError("");
+    setMessage("");
+    try {
+      await apiRequest<{ business: Business }>(
+        `/api/marketplace/businesses/${business.id}/status`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ status }),
+        },
+      );
+      setMessage(`${business.name} is now ${status}.`);
+      await Promise.all([load(), onCatalogChanged()]);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Business status could not be updated.",
+      );
+    } finally {
+      setWorking("");
+    }
+  };
+
+  const createProduct = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setWorking("product");
+    setError("");
+    setMessage("");
+    try {
+      const response = await apiRequest<{ product: Product }>(
+        "/api/marketplace/products",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            ...productForm,
+            priceCents: Math.round(Number(productForm.price) * 100),
+            inventoryCount:
+              productForm.inventoryCount === ""
+                ? null
+                : Number(productForm.inventoryCount),
+          }),
+        },
+      );
+      setMessage(`${response.product.name} is now live in the marketplace.`);
+      setProductForm((current) => ({
+        ...emptyProduct,
+        businessId: current.businessId,
+      }));
+      await Promise.all([load(), onCatalogChanged()]);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Product could not be published.",
+      );
+    } finally {
+      setWorking("");
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-rust" />
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-24 text-center">
+        <ShieldAlert className="mx-auto h-10 w-10 text-rust" />
+        <h2 className="mt-4 font-serif text-3xl font-bold">Merchant portal unavailable</h2>
+        <p className="mt-3 text-gray-600">{error}</p>
+        <button
+          type="button"
+          onClick={() => void load()}
+          className="mt-6 rounded-full bg-rust px-6 py-3 font-bold text-white"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <main className="mx-auto max-w-7xl space-y-8 px-4 py-10 sm:px-6 lg:px-8">
+      <section className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-rust">
+            Live merchant operations
+          </p>
+          <h1 className="mt-2 font-serif text-4xl font-bold">Merchant Portal</h1>
+          <p className="mt-2 text-gray-600">
+            Manage verification, products, orders, and payment readiness.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void load()}
+          className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-bold"
+        >
+          <RefreshCw className="h-4 w-4" /> Refresh
+        </button>
+      </section>
+
+      {(message || error) && (
+        <div
+          className={`rounded-2xl border px-5 py-4 text-sm font-semibold ${
+            error
+              ? "border-rust/20 bg-rust/5 text-rust-dark"
+              : "border-green-200 bg-green-50 text-green-800"
+          }`}
+          role="status"
+        >
+          {error || message}
+        </div>
+      )}
+
+      <section>
+        <div className="mb-4 flex items-center gap-2">
+          <CreditCard className="h-5 w-5 text-rust" />
+          <h2 className="font-serif text-2xl font-bold">Payment processors</h2>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <ProviderCard provider={data.payments.stripe} />
+          <ProviderCard provider={data.payments.paypal} />
+        </div>
+      </section>
+
+      <section>
+        <div className="mb-4 flex items-center gap-2">
+          <Store className="h-5 w-5 text-rust" />
+          <h2 className="font-serif text-2xl font-bold">
+            {data.canAdmin ? "Business applications" : "Your businesses"}
+          </h2>
+        </div>
+        {data.businesses.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center text-gray-600">
+            No business applications yet. Use “List Your Business” to get started.
+          </div>
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {data.businesses.map((business) => (
+              <article
+                key={business.id}
+                className="rounded-2xl border border-gray-200 bg-white p-5"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="font-serif text-xl font-bold">{business.name}</h3>
+                    <p className="mt-1 text-sm text-gray-500">
+                      {business.category} · {business.location}
+                    </p>
+                  </div>
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-bold capitalize ${
+                      business.status === "verified"
+                        ? "bg-green-50 text-green-700"
+                        : business.status === "rejected"
+                          ? "bg-red-50 text-red-700"
+                          : "bg-amber-50 text-amber-700"
+                    }`}
+                  >
+                    {business.status}
+                  </span>
+                </div>
+                <p className="mt-4 text-sm leading-relaxed text-gray-600">
+                  {business.description}
+                </p>
+                <div className="mt-4 text-sm text-gray-500">
+                  <p>{business.ownerName}</p>
+                  <p>{business.email}</p>
+                  {business.websiteUrl && (
+                    <a
+                      href={business.websiteUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 inline-flex items-center gap-1 font-bold text-rust"
+                    >
+                      Website <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  )}
+                </div>
+                {data.canAdmin && (
+                  <div className="mt-5 flex gap-2 border-t border-gray-100 pt-4">
+                    <button
+                      type="button"
+                      disabled={working === business.id}
+                      onClick={() => void updateStatus(business, "verified")}
+                      className="flex-1 rounded-xl bg-green-600 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
+                    >
+                      Verify
+                    </button>
+                    <button
+                      type="button"
+                      disabled={working === business.id}
+                      onClick={() => void updateStatus(business, "rejected")}
+                      className="flex-1 rounded-xl border border-red-200 px-3 py-2 text-sm font-bold text-red-700 disabled:opacity-50"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+        <form
+          onSubmit={createProduct}
+          className="rounded-2xl border border-gray-200 bg-white p-6"
+        >
+          <div className="mb-5 flex items-center gap-2">
+            <PackagePlus className="h-5 w-5 text-rust" />
+            <h2 className="font-serif text-2xl font-bold">Publish a product</h2>
+          </div>
+          {verifiedBusinesses.length === 0 ? (
+            <p className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">
+              A business must be verified before its products can be published.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              <select
+                required
+                value={productForm.businessId}
+                onChange={(event) =>
+                  setProductForm({ ...productForm, businessId: event.target.value })
+                }
+                className="w-full rounded-xl border border-gray-200 px-4 py-3"
+              >
+                {verifiedBusinesses.map((business) => (
+                  <option key={business.id} value={business.id}>
+                    {business.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                required
+                value={productForm.name}
+                onChange={(event) =>
+                  setProductForm({ ...productForm, name: event.target.value })
+                }
+                placeholder="Product name"
+                className="w-full rounded-xl border border-gray-200 px-4 py-3"
+              />
+              <textarea
+                required
+                minLength={10}
+                rows={4}
+                value={productForm.description}
+                onChange={(event) =>
+                  setProductForm({
+                    ...productForm,
+                    description: event.target.value,
+                  })
+                }
+                placeholder="Product description"
+                className="w-full rounded-xl border border-gray-200 px-4 py-3"
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  required
+                  min="0.50"
+                  step="0.01"
+                  type="number"
+                  value={productForm.price}
+                  onChange={(event) =>
+                    setProductForm({ ...productForm, price: event.target.value })
+                  }
+                  placeholder="Price (USD)"
+                  className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                />
+                <input
+                  min="0"
+                  step="1"
+                  type="number"
+                  value={productForm.inventoryCount}
+                  onChange={(event) =>
+                    setProductForm({
+                      ...productForm,
+                      inventoryCount: event.target.value,
+                    })
+                  }
+                  placeholder="Inventory (optional)"
+                  className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                />
+              </div>
+              <input
+                type="url"
+                value={productForm.imageUrl}
+                onChange={(event) =>
+                  setProductForm({ ...productForm, imageUrl: event.target.value })
+                }
+                placeholder="HTTPS product image URL (optional)"
+                className="w-full rounded-xl border border-gray-200 px-4 py-3"
+              />
+              <button
+                type="submit"
+                disabled={working === "product"}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-rust py-3 font-bold text-white disabled:opacity-60"
+              >
+                {working === "product" && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                Publish product
+              </button>
+            </div>
+          )}
+        </form>
+
+        <div className="rounded-2xl border border-gray-200 bg-white p-6">
+          <h2 className="font-serif text-2xl font-bold">Live products</h2>
+          <div className="mt-5 space-y-3">
+            {data.products.length === 0 ? (
+              <p className="text-sm text-gray-500">No products published yet.</p>
+            ) : (
+              data.products.map((product) => (
+                <div
+                  key={product.id}
+                  className="flex items-center justify-between gap-4 rounded-xl bg-gray-50 p-4"
+                >
+                  <div>
+                    <p className="font-bold">{product.name}</p>
+                    <p className="text-xs text-gray-500">
+                      {product.inventoryCount === null
+                        ? "Inventory not tracked"
+                        : `${product.inventoryCount} available`}
+                    </p>
+                  </div>
+                  <p className="font-black text-rust">
+                    {money(product.priceCents, product.currency)}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-gray-200 bg-white p-6">
+        <h2 className="font-serif text-2xl font-bold">Orders</h2>
+        <div className="mt-5 overflow-x-auto">
+          {data.orders.length === 0 ? (
+            <p className="text-sm text-gray-500">No checkout activity yet.</p>
+          ) : (
+            <table className="w-full min-w-[700px] text-left text-sm">
+              <thead className="border-b border-gray-200 text-xs uppercase text-gray-500">
+                <tr>
+                  <th className="pb-3">Order</th>
+                  <th className="pb-3">Business</th>
+                  <th className="pb-3">Processor</th>
+                  <th className="pb-3">Status</th>
+                  <th className="pb-3 text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.orders.map((order) => (
+                  <tr key={order.id} className="border-b border-gray-100">
+                    <td className="py-4 font-mono text-xs">{order.id}</td>
+                    <td className="py-4">{order.businessName}</td>
+                    <td className="py-4 capitalize">{order.provider}</td>
+                    <td className="py-4 capitalize">{order.status}</td>
+                    <td className="py-4 text-right font-bold">
+                      {money(order.totalCents, order.currency)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </section>
+    </main>
+  );
+}
