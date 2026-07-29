@@ -1,4 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Cabinet+Grotesk:wght@500;700;800&family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://base.goodos.app/backend-topbar.css?v=20260725-widget-4');
 @import "tailwindcss";
 
 @theme {
@@ -48,3 +49,193 @@ body {
   color: #1E1714;
 }
 
+:root {
+  --goodos-topbar-surface: rgba(26, 18, 16, 0.98);
+  --goodos-topbar-raised: rgba(54, 39, 34, 0.92);
+  --goodos-topbar-border: rgba(197, 160, 89, 0.22);
+  --goodos-topbar-text: #fffaf2;
+  --goodos-topbar-muted: #c8bdb2;
+  --goodos-topbar-accent: #c5a059;
+  --goodos-topbar-focus: #e2ad45;
+}
+
+.buyblack-topbar {
+  font-family: var(--font-sans);
+}
+
+.buyblack-topbar button,
+.buyblack-topbar a {
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.buyblack-brand-mark {
+  border: 2px solid var(--color-gold-base);
+  border-radius: 8px !important;
+  color: var(--color-gold-base);
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.buyblack-wordmark {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1;
+}
+
+.buyblack-wordmark__name {
+  color: #fff;
+  font-family: var(--font-serif);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+.buyblack-wordmark__name > span {
+  color: var(--color-gold-base);
+  font-family: var(--font-sans);
+  font-weight: 800;
+}
+
+.buyblack-wordmark__tagline {
+  margin-top: 4px;
+  color: var(--color-gold-base);
+  font-size: 6px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.buyblack-topbar [data-goodos-topbar-workspace] {
+  border-color: rgba(197, 160, 89, 0.24);
+  color: var(--color-gold-light);
+}
+
+.buyblack-search-shortcut {
+  flex: 0 0 auto;
+  border: 1px solid rgba(197, 160, 89, 0.22);
+  border-radius: 6px;
+  padding: 3px 7px;
+  color: var(--color-gold-light);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.buyblack-topbar [aria-current="page"] {
+  border-color: rgba(197, 160, 89, 0.28);
+  color: #fff;
+  background: rgba(197, 160, 89, 0.12);
+}
+
+.buyblack-topbar .buyblack-action--primary {
+  border-color: var(--color-rust);
+  color: #fff;
+  background: var(--color-rust);
+}
+
+.buyblack-topbar .buyblack-action--primary:hover {
+  border-color: var(--color-rust-dark);
+  background: var(--color-rust-dark);
+}
+
+.buyblack-account {
+  border: 1px solid rgba(197, 160, 89, 0.34) !important;
+  color: var(--color-gold-light) !important;
+  background: rgba(197, 160, 89, 0.12) !important;
+}
+
+.buyblack-account > span {
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.buyblack-account-menu {
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  z-index: 120;
+  width: 230px;
+  overflow: hidden;
+  border: 1px solid rgba(197, 160, 89, 0.24);
+  border-radius: 14px;
+  color: #fff;
+  background: #241916;
+  box-shadow: 0 22px 55px rgba(10, 6, 5, 0.38);
+}
+
+.buyblack-account-menu__identity {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 15px 16px;
+  border-bottom: 1px solid rgba(197, 160, 89, 0.16);
+}
+
+.buyblack-account-menu__identity strong,
+.buyblack-account-menu__identity span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.buyblack-account-menu__identity strong {
+  font-size: 13px;
+}
+
+.buyblack-account-menu__identity span {
+  color: #c8bdb2;
+  font-size: 11px;
+}
+
+.buyblack-account-menu > button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 16px;
+  color: #e8dfd6;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.buyblack-account-menu > button:hover {
+  color: #fff;
+  background: rgba(197, 160, 89, 0.12);
+}
+
+@media (max-width: 760px) {
+  .buyblack-topbar [data-goodos-topbar-brand] > .buyblack-wordmark {
+    display: flex !important;
+  }
+
+  .buyblack-topbar .buyblack-action--mobile-hidden {
+    display: none !important;
+  }
+
+  .buyblack-topbar .buyblack-action--primary {
+    width: var(--goodos-topbar-control-size);
+    padding: 0;
+  }
+
+  .buyblack-topbar .buyblack-action--primary > span {
+    display: none;
+  }
+
+  .buyblack-search-shortcut {
+    display: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .buyblack-wordmark__tagline {
+    display: none;
+  }
+}
