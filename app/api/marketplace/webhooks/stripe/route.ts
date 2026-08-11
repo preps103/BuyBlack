@@ -1,4 +1,9 @@
-import { json, routeError } from "../../../../../lib/server/http";
+import {
+  ApiError,
+  json,
+  readText,
+  routeError,
+} from "../../../../../lib/server/http";
 import {
   markOrder,
   orderIdForProvider,
@@ -11,11 +16,14 @@ import {
 
 export async function POST(request: Request) {
   try {
-    const rawBody = await request.text();
+    const rawBody = await readText(request, 256 * 1024);
     const signature = request.headers.get("stripe-signature") || "";
     const event = await verifyStripeWebhook(rawBody, signature);
     const eventId = String(event.id || "");
     const eventType = String(event.type || "");
+    if (!eventId || !eventType) {
+      throw new ApiError("Stripe webhook event is incomplete.", 400, "INVALID_WEBHOOK_EVENT");
+    }
     const data = event.data as { object?: Record<string, unknown> } | undefined;
     const object = data?.object || {};
     const metadata = object.metadata as Record<string, unknown> | undefined;
@@ -41,7 +49,8 @@ export async function POST(request: Request) {
 
     if (orderId) {
       if (
-        eventType === "checkout.session.completed" ||
+        (eventType === "checkout.session.completed" &&
+          object.payment_status === "paid") ||
         eventType === "checkout.session.async_payment_succeeded"
       ) {
         await markOrder(orderId, "paid");

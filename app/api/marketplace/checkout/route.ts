@@ -13,7 +13,10 @@ import {
   markOrder,
   resolveCheckoutLines,
 } from "../../../../lib/server/marketplace";
-import { createProviderCheckout } from "../../../../lib/server/payments";
+import {
+  createProviderCheckout,
+  requireProvider,
+} from "../../../../lib/server/payments";
 import type { PaymentProvider } from "../../../../lib/server/runtime";
 
 export async function POST(request: Request) {
@@ -29,6 +32,7 @@ export async function POST(request: Request) {
         "UNSUPPORTED_PROVIDER",
       );
     }
+    requireProvider(provider);
 
     const lines = await resolveCheckoutLines(payload.items);
     const user = await getGoodOsUser(request);

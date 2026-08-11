@@ -1,4 +1,9 @@
-import { json, readJson, routeError } from "../../../../../lib/server/http";
+import {
+  ApiError,
+  json,
+  readJson,
+  routeError,
+} from "../../../../../lib/server/http";
 import {
   markOrder,
   orderIdForProvider,
@@ -11,10 +16,13 @@ import {
 
 export async function POST(request: Request) {
   try {
-    const event = await readJson(request);
+    const event = await readJson(request, 256 * 1024);
     await verifyPayPalWebhook(event, request.headers);
     const eventId = String(event.id || "");
     const eventType = String(event.event_type || "");
+    if (!eventId || !eventType) {
+      throw new ApiError("PayPal webhook event is incomplete.", 400, "INVALID_WEBHOOK_EVENT");
+    }
     const resource = (event.resource || {}) as Record<string, unknown>;
     const supplementary = (resource.supplementary_data || {}) as {
       related_ids?: { order_id?: string };

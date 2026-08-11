@@ -7,6 +7,11 @@ export const metadata: Metadata = {
   description:
     "Discover, share, and support exceptional Black-owned businesses, creators, and brands.",
   applicationName: "BuyBlack",
+  alternates: { canonical: "/" },
+  robots: {
+    index: true,
+    follow: true,
+  },
   manifest: "/site.webmanifest",
   openGraph: {
     title: "BuyBlack Marketplace",

@@ -650,7 +650,7 @@ export async function resolveCheckoutLines(
     );
   }
 
-  const requested = rawItems.map((item) => {
+  const requestedItems = rawItems.map((item) => {
     const record = item as Record<string, unknown>;
     const productId = cleanText(record.productId, "Product", 5, 100);
     const quantity = Math.round(Number(record.quantity || 1));
@@ -659,6 +659,19 @@ export async function resolveCheckoutLines(
     }
     return { productId, quantity };
   });
+
+  const requestedByProduct = new Map<string, number>();
+  for (const item of requestedItems) {
+    const quantity = (requestedByProduct.get(item.productId) || 0) + item.quantity;
+    if (quantity > 25) {
+      throw new ApiError("Product quantity is invalid.", 400, "INVALID_QUANTITY");
+    }
+    requestedByProduct.set(item.productId, quantity);
+  }
+  const requested = Array.from(requestedByProduct, ([productId, quantity]) => ({
+    productId,
+    quantity,
+  }));
 
   const uniqueIds = Array.from(new Set(requested.map((item) => item.productId)));
   const placeholders = uniqueIds.map(() => "?").join(",");
@@ -776,18 +789,73 @@ export async function markOrder(
   status: "pending" | "paid" | "cancelled" | "failed",
   failureReason: string | null = null,
 ) {
-  await getDb()
+  const db = getDb();
+
+  if (status === "paid") {
+    const order = await db
+      .prepare("SELECT items_json FROM buyblack_orders WHERE id = ? LIMIT 1")
+      .bind(orderId)
+      .first<Row>();
+    if (!order) return;
+
+    let lines: CheckoutLine[] = [];
+    try {
+      lines = JSON.parse(String(order.items_json || "[]")) as CheckoutLine[];
+    } catch {
+      console.error(`BuyBlack order ${orderId} has invalid item data.`);
+    }
+
+    const inventoryUpdates = lines
+      .filter(
+        (line) =>
+          typeof line.productId === "string" &&
+          Number.isInteger(line.quantity) &&
+          line.quantity > 0,
+      )
+      .map((line) =>
+        db
+          .prepare(
+            `
+              UPDATE buyblack_products
+              SET inventory_count = MAX(0, inventory_count - ?),
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE id = ?
+                AND inventory_count IS NOT NULL
+                AND EXISTS (
+                  SELECT 1 FROM buyblack_orders
+                  WHERE id = ? AND status <> 'paid'
+                )
+            `,
+          )
+          .bind(line.quantity, line.productId, orderId),
+      );
+    const paidTransition = db
+      .prepare(
+        `
+          UPDATE buyblack_orders
+          SET status = 'paid',
+              failure_reason = NULL,
+              paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP),
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ? AND status <> 'paid'
+        `,
+      )
+      .bind(orderId);
+    await db.batch([...inventoryUpdates, paidTransition]);
+    return;
+  }
+
+  await db
     .prepare(
       `
         UPDATE buyblack_orders
         SET status = ?,
             failure_reason = ?,
-            paid_at = CASE WHEN ? = 'paid' THEN COALESCE(paid_at, CURRENT_TIMESTAMP) ELSE paid_at END,
             updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
+        WHERE id = ? AND status <> 'paid'
       `,
     )
-    .bind(status, failureReason, status, orderId)
+    .bind(status, failureReason, orderId)
     .run();
 }
 
@@ -807,6 +875,27 @@ export async function getOrder(orderId: string) {
     throw new ApiError("Order not found.", 404, "ORDER_NOT_FOUND");
   }
   return orderFromRow(row);
+}
+
+export async function canAccessOrder(orderId: string, user: GoodOsUser) {
+  if (isPlatformAdmin(user)) return true;
+  const row = await getDb()
+    .prepare(
+      `
+        SELECT orders.customer_user_id, business.owner_user_id
+        FROM buyblack_orders AS orders
+        JOIN buyblack_businesses AS business ON business.id = orders.business_id
+        WHERE orders.id = ?
+        LIMIT 1
+      `,
+    )
+    .bind(orderId)
+    .first<Row>();
+  return Boolean(
+    row &&
+      (String(row.customer_user_id || "") === user.id ||
+        String(row.owner_user_id || "") === user.id),
+  );
 }
 
 export async function recordPaymentEvent(input: {

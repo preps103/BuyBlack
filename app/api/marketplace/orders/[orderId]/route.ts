@@ -1,5 +1,7 @@
 import { ApiError, json, routeError } from "../../../../../lib/server/http";
+import { getGoodOsUser } from "../../../../../lib/server/auth";
 import {
+  canAccessOrder,
   getOrder,
   markOrder,
 } from "../../../../../lib/server/marketplace";
@@ -14,12 +16,9 @@ export async function GET(
     let order = await getOrder(orderId);
     const url = new URL(request.url);
     const sessionId = url.searchParams.get("session_id");
+    let sessionAuthorized = false;
 
-    if (
-      order.provider === "stripe" &&
-      order.status === "pending" &&
-      sessionId
-    ) {
+    if (order.provider === "stripe" && sessionId) {
       if (order.providerOrderId !== sessionId) {
         throw new ApiError(
           "Checkout session does not match this order.",
@@ -37,12 +36,33 @@ export async function GET(
           "ORDER_SESSION_MISMATCH",
         );
       }
-      if (session.payment_status === "paid") {
-        await markOrder(orderId, "paid");
-      } else if (session.status === "expired") {
-        await markOrder(orderId, "cancelled");
+      sessionAuthorized = true;
+      if (order.status === "pending") {
+        if (session.payment_status === "paid") {
+          await markOrder(orderId, "paid");
+        } else if (session.status === "expired") {
+          await markOrder(orderId, "cancelled");
+        }
+        order = await getOrder(orderId);
       }
-      order = await getOrder(orderId);
+    }
+
+    if (!sessionAuthorized) {
+      const user = await getGoodOsUser(request);
+      if (!user) {
+        throw new ApiError(
+          "Sign in or provide the matching checkout session to view this order.",
+          401,
+          "AUTHENTICATION_REQUIRED",
+        );
+      }
+      if (!(await canAccessOrder(orderId, user))) {
+        throw new ApiError(
+          "You do not have access to this order.",
+          403,
+          "ORDER_ACCESS_DENIED",
+        );
+      }
     }
 
     return json({ order });

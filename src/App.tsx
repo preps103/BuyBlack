@@ -218,7 +218,8 @@ function ShopCard({
             <button
               type="button"
               onClick={onAdd}
-              className="rounded-lg bg-bazaar-dark p-2.5 text-white"
+              disabled={product.inventoryCount !== null && product.inventoryCount < 1}
+              className="rounded-lg bg-bazaar-dark p-2.5 text-white disabled:cursor-not-allowed disabled:opacity-45"
               aria-label={`Add ${product.name} to cart`}
             >
               <ShoppingBag className="h-4 w-4" />
@@ -314,6 +315,11 @@ export default function App() {
     const resolveCheckout = async () => {
       setWorking("checkout-return");
       try {
+        if (checkout === "cancelled") {
+          setToast("Checkout was cancelled. Your cart is still available.");
+          return;
+        }
+
         let order: Order;
         if (
           checkout === "success" &&
@@ -343,11 +349,10 @@ export default function App() {
           order = result.order;
         }
 
-        if (checkout === "cancelled") {
-          setToast("Checkout was cancelled. Your cart is still available.");
-        } else if (order.status === "paid") {
+        if (order.status === "paid") {
           setCart([]);
           setToast("Payment confirmed. Your order is complete.");
+          void loadCatalog();
         } else {
           setToast(`Order status: ${order.status}.`);
         }
@@ -365,7 +370,7 @@ export default function App() {
     };
 
     void resolveCheckout();
-  }, []);
+  }, [loadCatalog]);
 
   const visibleBusinesses = useMemo(() => {
     const needle = searchQuery.trim().toLowerCase();
@@ -429,6 +434,17 @@ export default function App() {
 
   const addToCart = (product: Product, business: Business) => {
     setError("");
+    const inventoryLimit = Math.min(product.inventoryCount ?? 25, 25);
+    const currentQuantity =
+      cart.find((item) => item.product.id === product.id)?.quantity || 0;
+    if (inventoryLimit < 1) {
+      setError(`${product.name} is sold out.`);
+      return;
+    }
+    if (currentQuantity >= inventoryLimit) {
+      setError(`Only ${inventoryLimit} ${product.name} available per order.`);
+      return;
+    }
     if (cart.length && cart[0].business.id !== business.id) {
       setError(
         "Checkout supports one merchant at a time. Complete or clear the current cart first.",
@@ -455,7 +471,13 @@ export default function App() {
       current
         .map((item) =>
           item.product.id === productId
-            ? { ...item, quantity: Math.max(0, item.quantity + change) }
+            ? {
+                ...item,
+                quantity: Math.min(
+                  Math.min(item.product.inventoryCount ?? 25, 25),
+                  Math.max(0, item.quantity + change),
+                ),
+              }
             : item,
         )
         .filter((item) => item.quantity > 0),
@@ -569,9 +591,9 @@ export default function App() {
   const beginCheckout = async () => {
     if (!cart.length) return;
     const readiness = catalog.payments[checkoutProvider];
-    if (!readiness.configured) {
+    if (!readiness.configured || !readiness.webhooksConfigured) {
       setError(
-        `${checkoutProvider === "stripe" ? "Card checkout" : "PayPal"} needs merchant credentials before it can accept payments.`,
+        `${checkoutProvider === "stripe" ? "Card checkout" : "PayPal"} needs credentials and a verified webhook before it can accept payments.`,
       );
       return;
     }
@@ -1309,9 +1331,16 @@ export default function App() {
                             onClick={() =>
                               addToCart(product, selectedBusiness)
                             }
-                            className="rounded-lg bg-rust px-3 py-2 text-xs font-bold text-white"
+                            disabled={
+                              product.inventoryCount !== null &&
+                              product.inventoryCount < 1
+                            }
+                            className="rounded-lg bg-rust px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            Add to cart
+                            {product.inventoryCount !== null &&
+                            product.inventoryCount < 1
+                              ? "Sold out"
+                              : "Add to cart"}
                           </button>
                         </div>
                       </article>
@@ -1445,7 +1474,11 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => updateQuantity(item.product.id, 1)}
-                          className="rounded-full p-1.5"
+                          disabled={
+                            item.quantity >=
+                            Math.min(item.product.inventoryCount ?? 25, 25)
+                          }
+                          className="rounded-full p-1.5 disabled:cursor-not-allowed disabled:opacity-35"
                           aria-label={`Add one ${item.product.name}`}
                         >
                           <Plus className="h-3.5 w-3.5" />
@@ -1463,17 +1496,20 @@ export default function App() {
                   <span>{money(cartTotal)}</span>
                 </div>
                 <p className="mt-2 text-xs text-gray-500">
-                  Shipping and applicable taxes are collected by the payment
-                  processor.
+                  The displayed total is charged by the selected processor.
+                  Merchants must include any shipping costs in their listed price.
                 </p>
                 <div className="mt-5 grid grid-cols-2 gap-3">
                   {(["stripe", "paypal"] as const).map((provider) => {
                     const readiness = catalog.payments[provider];
+                    const ready =
+                      readiness.configured && readiness.webhooksConfigured;
                     return (
                       <button
                         type="button"
                         key={provider}
                         onClick={() => setCheckoutProvider(provider)}
+                        disabled={!ready}
                         className={`rounded-xl border p-3 text-left ${
                           checkoutProvider === provider
                             ? "border-rust bg-rust/5"
@@ -1490,12 +1526,13 @@ export default function App() {
                         </span>
                         <span
                           className={`mt-1 block text-[10px] font-bold ${
-                            readiness.configured
+                            readiness.configured &&
+                            readiness.webhooksConfigured
                               ? "text-green-700"
                               : "text-amber-700"
                           }`}
                         >
-                          {readiness.configured ? "Available" : "Setup needed"}
+                          {ready ? "Available" : "Setup needed"}
                         </span>
                       </button>
                     );
@@ -1504,7 +1541,11 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => void beginCheckout()}
-                  disabled={working === "checkout"}
+                  disabled={
+                    working === "checkout" ||
+                    !catalog.payments[checkoutProvider].configured ||
+                    !catalog.payments[checkoutProvider].webhooksConfigured
+                  }
                   className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-rust py-3.5 font-bold text-white disabled:opacity-60"
                 >
                   {working === "checkout" && (

@@ -39,3 +39,13 @@ export function paymentReadiness() {
     },
   };
 }
+
+export function assertProviderReady(provider: PaymentProvider) {
+  const readiness = paymentReadiness()[provider];
+  if (!readiness.configured || !readiness.webhooksConfigured) {
+    throw new Error(
+      `${provider === "stripe" ? "Card payments" : "PayPal"} require credentials and a verified webhook before checkout can open.`,
+    );
+  }
+  return readiness;
+}

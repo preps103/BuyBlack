@@ -53,12 +53,27 @@ export function routeError(error: unknown) {
 
 export async function readJson<T extends Record<string, unknown>>(
   request: Request,
+  maximumBytes = 64 * 1024,
 ): Promise<T> {
   try {
-    return (await request.json()) as T;
-  } catch {
+    return JSON.parse(await readText(request, maximumBytes)) as T;
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
     throw new ApiError("A valid JSON request body is required.", 400, "INVALID_JSON");
   }
+}
+
+export async function readText(request: Request, maximumBytes = 64 * 1024) {
+  const contentLength = Number(request.headers.get("content-length") || 0);
+  if (Number.isFinite(contentLength) && contentLength > maximumBytes) {
+    throw new ApiError("The request body is too large.", 413, "PAYLOAD_TOO_LARGE");
+  }
+
+  const body = await request.text();
+  if (new TextEncoder().encode(body).byteLength > maximumBytes) {
+    throw new ApiError("The request body is too large.", 413, "PAYLOAD_TOO_LARGE");
+  }
+  return body;
 }
 
 export function cleanText(
@@ -67,10 +82,7 @@ export function cleanText(
   minimum = 1,
   maximum = 500,
 ) {
-  const cleaned = String(value ?? "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .slice(0, maximum);
+  const cleaned = String(value ?? "").trim().replace(/\s+/g, " ");
 
   if (cleaned.length < minimum) {
     throw new ApiError(
@@ -80,14 +92,26 @@ export function cleanText(
     );
   }
 
+  if (cleaned.length > maximum) {
+    throw new ApiError(
+      `${field} must contain no more than ${maximum} characters.`,
+      400,
+      "INVALID_FIELD",
+    );
+  }
+
   return cleaned;
 }
 
 export function optionalText(value: unknown, maximum = 500) {
-  const cleaned = String(value ?? "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .slice(0, maximum);
+  const cleaned = String(value ?? "").trim().replace(/\s+/g, " ");
+  if (cleaned.length > maximum) {
+    throw new ApiError(
+      `This field must contain no more than ${maximum} characters.`,
+      400,
+      "INVALID_FIELD",
+    );
+  }
   return cleaned || null;
 }
 
@@ -133,7 +157,13 @@ export function id(prefix: string) {
 
 export function assertSameOrigin(request: Request) {
   const origin = request.headers.get("origin");
-  if (!origin) return;
+  if (!origin) {
+    throw new ApiError(
+      "A same-origin request is required.",
+      403,
+      "ORIGIN_REQUIRED",
+    );
+  }
 
   const requestUrl = new URL(request.url);
   let originUrl: URL;

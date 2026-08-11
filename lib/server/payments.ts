@@ -1,6 +1,10 @@
 import { ApiError } from "./http";
 import type { CheckoutLine } from "./marketplace";
-import { paymentReadiness, runtimeEnvironment, type PaymentProvider } from "./runtime";
+import {
+  assertProviderReady,
+  runtimeEnvironment,
+  type PaymentProvider,
+} from "./runtime";
 
 type CheckoutInput = {
   orderId: string;
@@ -40,11 +44,12 @@ async function providerJson<T>(
   return body as T;
 }
 
-function requireProvider(provider: PaymentProvider) {
-  const readiness = paymentReadiness()[provider];
-  if (!readiness.configured) {
+export function requireProvider(provider: PaymentProvider) {
+  try {
+    assertProviderReady(provider);
+  } catch (error) {
     throw new ApiError(
-      `${provider === "stripe" ? "Card payments" : "PayPal"} are not configured yet.`,
+      error instanceof Error ? error.message : "Payment provider setup is incomplete.",
       503,
       "PAYMENT_PROVIDER_NOT_CONFIGURED",
     );
