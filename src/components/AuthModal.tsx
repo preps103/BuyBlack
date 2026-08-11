@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, LogIn, ShieldCheck, X } from "lucide-react";
+import { Loader2, ShieldCheck, X } from "lucide-react";
 
 const GOODOS_AUTH_ORIGIN = "";
 const GOODOS_PUBLIC_ORIGIN = "https://base.goodos.app";
@@ -20,6 +20,7 @@ export default function AuthModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [mfaUrl, setMfaUrl] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   if (!open) return null;
 
@@ -63,6 +64,12 @@ export default function AuthModal({
     }
   };
 
+  const beginGoodOSLogin = () => {
+    window.location.assign(
+      `${GOODOS_PUBLIC_ORIGIN}/auth/ui?redirect=${encodeURIComponent(window.location.origin)}`,
+    );
+  };
+
   return (
     <div
       className="fixed inset-0 z-[90] flex items-center justify-center bg-bazaar-dark/85 p-4 backdrop-blur-sm"
@@ -70,38 +77,29 @@ export default function AuthModal({
       aria-modal="true"
       aria-labelledby="buyblack-login-title"
     >
-      <div className="relative w-full max-w-md overflow-hidden rounded-[2rem] bg-white shadow-2xl">
+      <div className="buyblack-auth-card relative w-full" data-goodbase-login-panel>
         <button
           type="button"
           onClick={onClose}
-          className="absolute right-5 top-5 rounded-full p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-900"
+          className="absolute right-5 top-5 z-10 rounded-full p-2 text-gray-400 hover:bg-white/10 hover:text-white"
           aria-label="Close sign-in dialog"
         >
           <X className="h-5 w-5" />
         </button>
-        <div className="border-b border-gray-100 bg-[#FAF8F5] px-8 pb-6 pt-8">
-          <div className="mb-5 flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-bazaar-dark text-lg font-black text-gold-base">
-              G
-            </div>
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-rust">
-                GoodOS Account
-              </p>
-              <p className="font-serif text-xl font-bold">BuyBlack</p>
-            </div>
-          </div>
-          <h2 id="buyblack-login-title" className="font-serif text-3xl font-bold">
-            Welcome back
-          </h2>
-          <p className="mt-2 text-sm text-gray-500">
-            Use the same secure account you use across GoodOS.
-          </p>
+        <p className="goodbase-login-kicker">Welcome back</p>
+        <h2 id="buyblack-login-title">Sign in to BuyBlack</h2>
+        <p className="goodbase-login-subtitle">Access your marketplace, shops, orders, reviews, and community workspace.</p>
+        <div data-goodbase-login-providers aria-label="Sign-in providers">
+          <button data-goodbase-login-provider type="button" disabled><span className="goodbase-login-provider-mark goodbase-login-provider-mark--google">G</span>Sign in with Google</button>
+          <button data-goodbase-login-provider type="button" disabled><span className="goodbase-login-provider-mark">●</span>Sign in with Apple</button>
+          <button data-goodbase-login-provider type="button" disabled><span className="goodbase-login-provider-mark goodbase-login-provider-mark--microsoft"><i /><i /><i /><i /></span>Sign in with Microsoft</button>
+          <button data-goodbase-login-provider type="button" onClick={beginGoodOSLogin}><span className="goodbase-login-provider-mark">◇</span>Continue with GoodOS</button>
         </div>
-        <form className="space-y-5 p-8" onSubmit={submit}>
+        <div data-goodbase-login-divider>OR USE EMAIL</div>
+        <form data-goodbase-login-fields onSubmit={submit}>
           {error && (
             <div
-              className="rounded-xl border border-rust/20 bg-rust/5 px-4 py-3 text-sm font-medium text-rust-dark"
+              data-goodbase-login-error
               role="alert"
             >
               {error}
@@ -116,43 +114,42 @@ export default function AuthModal({
               )}
             </div>
           )}
-          <label className="block text-sm font-semibold">
-            Email
+          <label data-goodbase-login-field>
+            <span>Email address</span>
             <input
               type="email"
               required
               autoComplete="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              className="mt-2 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 outline-none focus:border-rust"
-              placeholder="you@example.com"
+              placeholder="you@company.com"
             />
           </label>
-          <label className="block text-sm font-semibold">
-            Password
+          <label data-goodbase-login-field>
+            <span><span>Password</span><a data-goodbase-login-recovery href={`${GOODOS_PUBLIC_ORIGIN}/forgot-password`}>Forgot your password?</a></span>
+            <span data-goodbase-login-password>
             <input
-              type="password"
+              type={showPassword ? "text" : "password"}
               required
               autoComplete="current-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              className="mt-2 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 outline-none focus:border-rust"
               placeholder="Enter your password"
             />
+            <button data-goodbase-login-password-toggle type="button" aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} onClick={() => setShowPassword((value) => !value)} />
+            </span>
           </label>
           <button
+            data-goodbase-login-submit
             type="submit"
             disabled={loading}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-rust py-3.5 font-bold text-white hover:bg-rust-dark disabled:opacity-60"
           >
-            {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <LogIn className="h-4 w-4" />
-            )}
-            {loading ? "Signing in…" : "Sign In with GoodOS"}
+            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+            {loading ? "Signing in…" : "Sign in securely"}
           </button>
         </form>
+        <p className="goodbase-login-create">New to BuyBlack? <a data-goodbase-login-recovery href={`${GOODOS_PUBLIC_ORIGIN}/register`}>Create account</a></p>
+        <div className="goodbase-login-security"><ShieldCheck className="inline h-4 w-4" /> Authentication and account security are managed through GoodBase.</div>
       </div>
     </div>
   );
