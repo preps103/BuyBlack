@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { X } from "lucide-react";
-import { GoodOSLoginWidget } from "@goodos/topbar-widget";
+import { GoodOSLoginWidget } from "../../vendor/goodos-topbar-widget";
 
 const GOODOS_AUTH_ORIGIN = "";
 const GOODOS_PUBLIC_ORIGIN = "https://base.goodos.app";
