@@ -15,7 +15,7 @@
     "check": "npm run lint && npm run typecheck && npm run build"
   },
   "dependencies": {
-    "@goodos/topbar-widget": "github:preps103/GoodOSUIWidgets#3ad7382",
+    "@goodos/topbar-widget": "file:vendor/goodos-topbar-widget",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "0.546.0",
     "next": "^16.3.0",
