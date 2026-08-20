@@ -1,6 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Cabinet+Grotesk:wght@500;700;800&family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
 @import url('https://base.goodos.app/backend-topbar.css?v=20260725-widget-4');
-@import url('https://base.goodos.app/backend-login.css?v=20260811');
 @import "tailwindcss";
 
 .buyblack-auth-card {
