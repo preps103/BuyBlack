@@ -15,6 +15,7 @@
     "check": "npm run lint && npm run typecheck && npm run build"
   },
   "dependencies": {
+    "@goodos/topbar-widget": "file:vendor/goodos-topbar-widget",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "0.546.0",
     "next": "^16.3.0",
@@ -40,8 +41,8 @@
     "wrangler": "4.120.1"
   },
   "overrides": {
-    "nanoid": "3.3.17",
-    "postcss": "8.5.23",
+    "nanoid": "3.3.18",
+    "postcss": "8.5.26",
     "sharp": "0.35.0"
   },
   "type": "module"

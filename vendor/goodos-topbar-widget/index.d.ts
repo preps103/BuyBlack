@@ -8,6 +8,30 @@ import type {
 export declare const GOODOS_TOPBAR_WIDGET_VERSION = "3.0.0";
 export declare const GOODOS_LOGIN_WIDGET_VERSION = "1.1.0";
 export declare const GOODOS_LOGIN_SHELL_VERSION = "1.0.0";
+export declare const GOODOS_AUTH_ORIGIN = "https://base.goodos.app";
+
+export interface GoodOSIdentityProviderRecord {
+  id: string;
+  provider_type: string;
+  display_name?: string;
+  available: boolean;
+}
+
+export declare function loadGoodOSIdentityProviders(
+  origin?: string,
+): Promise<GoodOSIdentityProviderRecord[]>;
+
+export declare function goodOSIdentityProviderUrl(
+  providerId: string,
+  redirect: string,
+  origin?: string,
+): string;
+
+export declare function goodOSAccountUrl(
+  mode: "login" | "register" | "forgot",
+  redirect: string,
+  origin?: string,
+): string;
 
 interface SharedProps {
   className?: string;

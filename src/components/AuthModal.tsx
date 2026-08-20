@@ -3,12 +3,15 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, ShieldCheck, ShoppingBag, Store } from "lucide-react";
 import {
+  type GoodOSIdentityProviderRecord,
   GoodOSLoginShell,
   GoodOSLoginWidget,
-} from "../../vendor/goodos-topbar-widget";
+  goodOSAccountUrl,
+  goodOSIdentityProviderUrl,
+  loadGoodOSIdentityProviders,
+} from "@goodos/topbar-widget";
 
 const GOODOS_AUTH_ORIGIN = "";
-const GOODOS_PUBLIC_ORIGIN = "https://base.goodos.app";
 
 function BuyBlackLoginStory() {
   return (
@@ -93,6 +96,11 @@ export default function AuthModal({
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [providers, setProviders] = useState<GoodOSIdentityProviderRecord[]>([]);
+
+  useEffect(() => {
+    loadGoodOSIdentityProviders().then(setProviders).catch(() => setProviders([]));
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -147,10 +155,16 @@ export default function AuthModal({
   };
 
   const beginGoodOSLogin = () => {
-    // This intentionally leaves BuyBlack for the shared GoodOS authentication UI.
-    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-    window.location.href =
-      `${GOODOS_PUBLIC_ORIGIN}/auth/ui?redirect=${encodeURIComponent(window.location.origin)}`;
+    window.location.href = goodOSAccountUrl("login", window.location.origin);
+  };
+
+  const beginProviderLogin = (providerType: "google" | "apple" | "microsoft") => {
+    const provider = providers.find((item) => item.provider_type === providerType);
+    if (!provider) {
+      setError(`${providerType[0].toUpperCase()}${providerType.slice(1)} sign-in is not currently enabled in GoodBase.`);
+      return;
+    }
+    window.location.href = goodOSIdentityProviderUrl(provider.id, window.location.origin);
   };
 
   return (
@@ -174,10 +188,15 @@ export default function AuthModal({
           onEmailChange={setEmail}
           onPasswordChange={setPassword}
           onSubmit={submit}
+          onProviderSignIn={beginProviderLogin}
           onGoodOSSignIn={beginGoodOSLogin}
-          providerAvailability={{ google: false, apple: false, microsoft: false }}
-          onForgotPassword={() => { window.location.href = `${GOODOS_PUBLIC_ORIGIN}/forgot-password`; }}
-          onCreateAccount={() => { window.location.href = `${GOODOS_PUBLIC_ORIGIN}/register`; }}
+          providerAvailability={{
+            google: providers.some((item) => item.provider_type === "google"),
+            apple: providers.some((item) => item.provider_type === "apple"),
+            microsoft: providers.some((item) => item.provider_type === "microsoft"),
+          }}
+          onForgotPassword={() => { window.location.href = goodOSAccountUrl("forgot", window.location.origin); }}
+          onCreateAccount={() => { window.location.href = goodOSAccountUrl("register", window.location.origin); }}
           loading={loading}
           error={error}
           homeHref="/"

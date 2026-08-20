@@ -11,6 +11,35 @@ import { createPortal } from "react-dom";
 export const GOODOS_TOPBAR_WIDGET_VERSION = "3.0.0";
 export const GOODOS_LOGIN_WIDGET_VERSION = "1.1.0";
 export const GOODOS_LOGIN_SHELL_VERSION = "1.0.0";
+export const GOODOS_AUTH_ORIGIN = "https://base.goodos.app";
+
+export async function loadGoodOSIdentityProviders(origin = GOODOS_AUTH_ORIGIN) {
+  const response = await fetch(`${origin.replace(/\/$/, "")}/api/oidc/providers`, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.success === false) {
+    throw new Error(payload.message || payload.error || "GoodBase provider discovery failed.");
+  }
+  const providers = payload.providers || payload.data?.providers || [];
+  return Array.isArray(providers)
+    ? providers.filter((provider) => provider?.available === true)
+    : [];
+}
+
+export function goodOSIdentityProviderUrl(providerId, redirect, origin = GOODOS_AUTH_ORIGIN) {
+  const url = new URL(`/api/oidc/start/${encodeURIComponent(providerId)}`, origin);
+  url.searchParams.set("returnTo", redirect);
+  return url.toString();
+}
+
+export function goodOSAccountUrl(mode, redirect, origin = GOODOS_AUTH_ORIGIN) {
+  const url = new URL("/auth/ui", origin);
+  if (mode && mode !== "login") url.searchParams.set("mode", mode);
+  url.searchParams.set("redirect", redirect);
+  return url.toString();
+}
 
 function classes(...values) {
   return values.filter(Boolean).join(" ");
