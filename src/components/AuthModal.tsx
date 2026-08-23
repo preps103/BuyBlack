@@ -200,7 +200,7 @@ export default function AuthModal({
           loading={loading}
           error={error}
           homeHref="/"
-          initialMode="dark"
+          initialMode="light"
           mobileBrand={
             <div className="font-serif text-2xl font-bold text-white">
               Buy<span className="text-[#c5a059]">Black</span>
