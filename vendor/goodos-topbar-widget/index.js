@@ -9,9 +9,10 @@ import {
 import { createPortal } from "react-dom";
 
 export const GOODOS_TOPBAR_WIDGET_VERSION = "3.0.0";
-export const GOODOS_LOGIN_WIDGET_VERSION = "1.5.0";
+export const GOODOS_LOGIN_WIDGET_VERSION = "1.6.0";
 export const GOODOS_LOGIN_SHELL_VERSION = "1.2.0";
 export const GOODOS_AUTH_ORIGIN = "https://base.goodos.app";
+export const GOODOS_PASSKEY_ORIGIN = "https://goodos.app";
 
 export async function loadGoodOSIdentityProviders(origin = GOODOS_AUTH_ORIGIN) {
   const response = await fetch(`${origin.replace(/\/$/, "")}/api/oidc/providers`, {
@@ -39,6 +40,21 @@ export function goodOSAccountUrl(mode, redirect, origin = GOODOS_AUTH_ORIGIN) {
   if (mode && mode !== "login") url.searchParams.set("mode", mode);
   url.searchParams.set("redirect", redirect);
   return url.toString();
+}
+
+export function goodOSPasskeyHandoffUrl(redirect, origin = GOODOS_PASSKEY_ORIGIN) {
+  const url = new URL("/", origin);
+  url.searchParams.set("passkey", "1");
+  url.searchParams.set("returnTo", redirect);
+  return url.toString();
+}
+
+export function goodOSPasskeysSupported() {
+  return typeof window !== "undefined" &&
+    window.isSecureContext === true &&
+    typeof window.PublicKeyCredential !== "undefined" &&
+    typeof navigator !== "undefined" &&
+    typeof navigator.credentials?.get === "function";
 }
 
 function classes(...values) {
@@ -371,6 +387,14 @@ const loginWidgetCss = String.raw`
 .goodos-login-widget .goodos-login-widget__input{appearance:none;width:100%!important;min-width:0!important;height:50px!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;outline:0!important;background:transparent!important;box-shadow:none!important;color:var(--goodos-login-text)!important;font:inherit;font-size:16px}
 .goodos-login-widget__input::placeholder{color:#737986}
 .goodos-login-widget__toggle{display:grid;width:34px;height:34px;place-items:center;border:0;border-radius:8px;background:transparent;color:#94a3b8;cursor:pointer;font:inherit;font-size:17px}
+.goodos-login-widget__passkey-setup{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:12px;margin:-2px 0 18px;padding:14px 16px;border:1px solid color-mix(in srgb,var(--goodos-login-accent) 38%,var(--goodos-login-border));border-radius:12px;background:color-mix(in srgb,var(--goodos-login-surface) 92%,var(--goodos-login-accent));color:var(--goodos-login-text);cursor:pointer;transition:border-color 160ms ease,box-shadow 160ms ease,background 160ms ease}
+.goodos-login-widget__passkey-setup:hover{border-color:var(--goodos-login-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--goodos-login-accent) 10%,transparent)}
+.goodos-login-widget__passkey-setup input{width:18px;height:18px;margin:0;accent-color:var(--goodos-login-accent);cursor:pointer}
+.goodos-login-widget__passkey-setup-copy{display:grid;gap:2px;min-width:0;font-size:14px;font-weight:800;line-height:1.35}
+.goodos-login-widget__passkey-setup-copy small{color:var(--goodos-login-muted);font-size:12px;font-weight:600;line-height:1.4}
+.goodos-login-widget__passkey-enroll{display:flex;width:100%;min-height:48px;align-items:center;justify-content:center;gap:9px;margin:-2px 0 18px;padding:0 16px;border:1px solid color-mix(in srgb,var(--goodos-login-accent) 48%,var(--goodos-login-border));border-radius:12px;background:color-mix(in srgb,var(--goodos-login-surface) 93%,var(--goodos-login-accent));color:var(--goodos-login-text);cursor:pointer;font:inherit;font-size:14px;font-weight:780}
+.goodos-login-widget__passkey-enroll:hover{border-color:var(--goodos-login-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--goodos-login-accent) 12%,transparent)}
+.goodos-login-widget__passkey-enroll:disabled{cursor:not-allowed;opacity:.58}
 .goodos-login-widget__error{margin:0 0 18px;padding:14px 16px;border:1px solid #ef9a9a;border-radius:12px;background:#3a171a;color:#fecaca;font-size:14px;font-weight:650;line-height:1.5}
 .goodos-login-widget .goodos-login-widget__submit{display:flex!important;width:100%!important;height:54px!important;min-height:54px!important;align-items:center!important;justify-content:center!important;gap:9px!important;margin-top:7px!important;padding:0 18px!important;border:0!important;border-radius:12px!important;background:var(--goodos-login-accent)!important;color:var(--goodos-login-accent-ink)!important;cursor:pointer;font:inherit;font-size:15px!important;font-weight:800!important;box-shadow:0 10px 24px color-mix(in srgb,var(--goodos-login-accent) 20%,transparent)!important}
 .goodos-login-widget__submit:hover{filter:brightness(1.07);transform:translateY(-1px)}
@@ -515,9 +539,15 @@ export function GoodOSLoginWidget({
   onSubmit,
   onProviderSignIn,
   onGoodOSSignIn,
-  passkeyAvailable = false,
+  passkeyAvailable,
   passkeyLoading = false,
   onPasskeySignIn,
+  setupPasskeyAfterSignIn = false,
+  onSetupPasskeyAfterSignInChange,
+  passkeyEnrollmentAvailable = false,
+  passkeyEnrollmentLoading = false,
+  passkeyEnrollmentLabel = "Set up Touch ID on this Mac",
+  onPasskeyEnroll,
   providerAvailability = {},
   onForgotPassword,
   onCreateAccount,
@@ -530,6 +560,7 @@ export function GoodOSLoginWidget({
   passwordPlaceholder = "Enter your GoodOS password",
   securityTitle = "Authentication and account security are managed through GoodBase.",
   securityDescription = "Use the same GoodOS email and password as every other GoodOS application.",
+  showSecurityNotice = true,
   termsHref = "/terms",
   privacyHref = "/privacy",
   className,
@@ -538,10 +569,12 @@ export function GoodOSLoginWidget({
   if (!appName) throw new Error("GoodOSLoginWidget requires appName.");
   const [mode, setMode] = useState(initialMode);
   const [showPassword, setShowPassword] = useState(false);
+  const [nativePasskeyAvailable, setNativePasskeyAvailable] = useState(false);
   const loginId = `${String(appName).toLowerCase().replace(/[^a-z0-9]+/g, "-")}-goodos-login`;
   const emailId = `${loginId}-username`;
   const passwordId = `${loginId}-password`;
   const isLight = mode === "light";
+  const showPasskey = passkeyAvailable ?? nativePasskeyAvailable;
   const providerLabels = {
     google: "Sign in with Google",
     apple: "Sign in with Apple",
@@ -551,6 +584,20 @@ export function GoodOSLoginWidget({
   const submit = (event) => {
     event.preventDefault();
     if (!loading) onSubmit?.(event);
+  };
+
+  useEffect(() => {
+    setNativePasskeyAvailable(goodOSPasskeysSupported());
+  }, []);
+
+  const beginPasskeySignIn = () => {
+    if (onPasskeySignIn) {
+      onPasskeySignIn();
+      return;
+    }
+    if (typeof window !== "undefined") {
+      window.location.assign(goodOSPasskeyHandoffUrl(window.location.href));
+    }
   };
 
   return createElement(
@@ -624,12 +671,12 @@ export function GoodOSLoginWidget({
             createElement(
               "div",
               { className: "goodos-login-widget__providers", "data-goodbase-login-providers": "", "aria-label": "Sign-in options" },
-              passkeyAvailable && createElement(ProviderButton, {
+              showPasskey && createElement(ProviderButton, {
                 provider: "passkey",
                 label: passkeyLoading ? "Waiting for your passkey…" : "Use Touch ID or passkey",
                 disabled: loading || passkeyLoading,
                 passkey: true,
-                onClick: onPasskeySignIn,
+                onClick: beginPasskeySignIn,
               }),
               ...["google", "apple", "microsoft"].map((provider) =>
                 createElement(ProviderButton, {
@@ -710,6 +757,33 @@ export function GoodOSLoginWidget({
                 }, showPassword ? "◉" : "◎"),
               ),
             ),
+            onSetupPasskeyAfterSignInChange && createElement(
+              "label",
+              { className: "goodos-login-widget__passkey-setup" },
+              createElement("input", {
+                type: "checkbox",
+                checked: setupPasskeyAfterSignIn,
+                disabled: loading,
+                onChange: (event) => onSetupPasskeyAfterSignInChange?.(event.target.checked, event),
+              }),
+              createElement(
+                "span",
+                { className: "goodos-login-widget__passkey-setup-copy" },
+                createElement("span", null, "Set up Touch ID after signing in"),
+                createElement("small", null, "Verify your account once, then create the passkey immediately."),
+              ),
+            ),
+            passkeyEnrollmentAvailable && createElement(
+              "button",
+              {
+                className: "goodos-login-widget__passkey-enroll",
+                type: "button",
+                disabled: loading || passkeyEnrollmentLoading,
+                onClick: onPasskeyEnroll,
+              },
+              createElement("span", { "aria-hidden": "true" }, "◎"),
+              passkeyEnrollmentLoading ? "Setting up Touch ID…" : passkeyEnrollmentLabel,
+            ),
             error && createElement("div", { className: "goodos-login-widget__error", role: "alert" }, error),
             createElement(
               "button",
@@ -723,7 +797,7 @@ export function GoodOSLoginWidget({
               `New to ${appName}? `,
               createElement("button", { className: "goodos-login-widget__create", type: "button", onClick: onCreateAccount }, "Create account"),
             ),
-            createElement(
+            showSecurityNotice && createElement(
               "div",
               { className: "goodos-login-widget__security" },
               createElement("span", { "aria-hidden": "true" }, "♢"),

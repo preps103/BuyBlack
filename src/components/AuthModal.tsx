@@ -206,8 +206,7 @@ export default function AuthModal({
               Buy<span className="text-[#c5a059]">Black</span>
             </div>
           }
-          securityTitle="Secure marketplace access powered by GoodBase."
-          securityDescription="Your identity and account session are protected through the shared GoodOS security layer."
+          showSecurityNotice={false}
         />
       </GoodOSLoginShell>
     </div>
