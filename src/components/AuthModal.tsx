@@ -206,7 +206,6 @@ export default function AuthModal({
               Buy<span className="text-[#c5a059]">Black</span>
             </div>
           }
-          showSecurityNotice={false}
         />
       </GoodOSLoginShell>
     </div>
