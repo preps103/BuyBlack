@@ -1,7 +1,7 @@
 {
-  "name": "BuyBlack Marketplace",
+  "name": "BuyBlack Directory",
   "short_name": "BuyBlack",
-  "description": "Discover, share, and support exceptional Black-owned businesses, creators, and brands.",
+  "description": "Discover curator-reviewed Black-owned businesses.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#1A1210",

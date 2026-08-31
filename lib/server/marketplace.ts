@@ -10,7 +10,6 @@ import {
   slugify,
   validEmail,
 } from "./http";
-import { paymentReadiness } from "./runtime";
 
 type Row = Record<string, unknown>;
 
@@ -38,8 +37,38 @@ function businessFromRow(row: Row) {
     location: `${String(row.city)}, ${String(row.state)}`,
     status: String(row.status),
     reviewNote: row.review_note ? String(row.review_note) : null,
-    rating: numberValue(row.rating),
-    reviewCount: numberValue(row.review_count),
+    submitterRelationship: String(row.submitter_relationship || "owner"),
+    ownershipConfirmed: Boolean(row.ownership_confirmed),
+    verificationUrl: row.verification_url
+      ? String(row.verification_url)
+      : null,
+    verificationDetails: row.verification_details
+      ? String(row.verification_details)
+      : null,
+    verifiedAt: row.verified_at ? String(row.verified_at) : null,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
+
+function publicBusinessFromRow(row: Row) {
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    slug: String(row.slug),
+    email: String(row.email),
+    phone: row.phone ? String(row.phone) : null,
+    category: String(row.category),
+    description: String(row.description),
+    websiteUrl: row.website_url ? String(row.website_url) : null,
+    imageUrl: row.image_url ? String(row.image_url) : null,
+    address: null,
+    city: String(row.city),
+    state: String(row.state),
+    location: `${String(row.city)}, ${String(row.state)}`,
+    status: "verified" as const,
+    reviewNote: null,
+    verifiedAt: row.verified_at ? String(row.verified_at) : null,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };
@@ -108,19 +137,17 @@ function orderFromRow(row: Row) {
   };
 }
 
-const businessProjection = `
-  business.*,
-  COALESCE(ROUND(AVG(review.rating), 1), 0) AS rating,
-  COUNT(DISTINCT review.id) AS review_count
-`;
-
 export async function catalog(filters: {
   query?: string | null;
   state?: string | null;
   category?: string | null;
 } = {}) {
   const db = getDb();
-  const where = ["business.status = 'verified'"];
+  const where = [
+    "business.status = 'verified'",
+    "business.ownership_confirmed = 1",
+    "LENGTH(TRIM(COALESCE(business.verification_details, ''))) >= 30",
+  ];
   const values: unknown[] = [];
 
   const query = optionalText(filters.query, 120);
@@ -146,67 +173,22 @@ export async function catalog(filters: {
   const businessesResult = await db
     .prepare(
       `
-        SELECT ${businessProjection}
+        SELECT
+          business.id, business.name, business.slug, business.email,
+          business.phone, business.category, business.description,
+          business.website_url, business.image_url, business.address,
+          business.city, business.state, business.verified_at,
+          business.created_at, business.updated_at
         FROM buyblack_businesses AS business
-        LEFT JOIN buyblack_reviews AS review
-          ON review.business_id = business.id
-          AND review.status = 'published'
         WHERE ${where.join(" AND ")}
-        GROUP BY business.id
-        ORDER BY business.created_at DESC
+        ORDER BY COALESCE(business.verified_at, business.updated_at) DESC
         LIMIT 250
       `,
     )
     .bind(...values)
     .all<Row>();
 
-  const businesses = (businessesResult.results || []).map(businessFromRow);
-  const businessIds = businesses.map((business) => business.id);
-  let products: ReturnType<typeof productFromRow>[] = [];
-  let reviews: ReturnType<typeof reviewFromRow>[] = [];
-
-  if (businessIds.length) {
-    const placeholders = businessIds.map(() => "?").join(",");
-    const [productResult, reviewResult] = await Promise.all([
-      db
-        .prepare(
-          `
-            SELECT *
-            FROM buyblack_products
-            WHERE status = 'active'
-              AND business_id IN (${placeholders})
-            ORDER BY created_at DESC
-            LIMIT 500
-          `,
-        )
-        .bind(...businessIds)
-        .all<Row>(),
-      db
-        .prepare(
-          `
-            SELECT
-              review.*,
-              business.name AS business_name,
-              COUNT(helpful.user_id) AS helpful_count
-            FROM buyblack_reviews AS review
-            JOIN buyblack_businesses AS business
-              ON business.id = review.business_id
-            LEFT JOIN buyblack_review_helpful AS helpful
-              ON helpful.review_id = review.id
-            WHERE review.status = 'published'
-              AND review.business_id IN (${placeholders})
-            GROUP BY review.id
-            ORDER BY review.created_at DESC
-            LIMIT 100
-          `,
-        )
-        .bind(...businessIds)
-        .all<Row>(),
-    ]);
-
-    products = (productResult.results || []).map(productFromRow);
-    reviews = (reviewResult.results || []).map(reviewFromRow);
-  }
+  const businesses = (businessesResult.results || []).map(publicBusinessFromRow);
 
   const states = Array.from(
     new Set(businesses.map((business) => business.state)),
@@ -217,17 +199,13 @@ export async function catalog(filters: {
 
   return {
     businesses,
-    products,
-    reviews,
     states,
     categories,
     stats: {
       businesses: businesses.length,
       states: states.length,
-      products: products.length,
-      reviews: reviews.length,
+      categories: categories.length,
     },
-    payments: paymentReadiness(),
   };
 }
 
@@ -237,23 +215,26 @@ export async function createApplication(
 ) {
   const db = getDb();
   const name = cleanText(payload.name, "Business name", 2, 140);
+  const city = cleanText(payload.city, "City", 2, 100);
+  const state = cleanText(payload.state, "State", 2, 80);
   const existing = await db
     .prepare(
       `
         SELECT id
         FROM buyblack_businesses
-        WHERE owner_user_id = ?
-          AND LOWER(name) = LOWER(?)
+        WHERE LOWER(name) = LOWER(?)
+          AND LOWER(city) = LOWER(?)
+          AND LOWER(state) = LOWER(?)
           AND status IN ('pending', 'verified')
         LIMIT 1
       `,
     )
-    .bind(user.id, name)
+    .bind(name, city, state)
     .first<Row>();
 
   if (existing) {
     throw new ApiError(
-      "This business already has an active BuyBlack application.",
+      "This business already has an active BuyBlack submission.",
       409,
       "APPLICATION_EXISTS",
     );
@@ -285,8 +266,43 @@ export async function createApplication(
     40,
     2000,
   );
-  const city = cleanText(payload.city, "City", 2, 100);
-  const state = cleanText(payload.state, "State", 2, 80);
+  const submitterRelationship = cleanText(
+    payload.submitterRelationship,
+    "Relationship",
+    3,
+    40,
+  );
+  if (
+    !["owner", "team_member", "community_nomination"].includes(
+      submitterRelationship,
+    )
+  ) {
+    throw new ApiError(
+      "Choose a valid relationship to the business.",
+      400,
+      "INVALID_RELATIONSHIP",
+    );
+  }
+  const ownershipConfirmed = [true, "true", "on", 1, "1"].includes(
+    payload.ownershipConfirmed as never,
+  );
+  if (!ownershipConfirmed) {
+    throw new ApiError(
+      "Confirm that the business is at least 51% Black-owned.",
+      400,
+      "OWNERSHIP_ATTESTATION_REQUIRED",
+    );
+  }
+  const verificationDetails = cleanText(
+    payload.verificationDetails,
+    "Ownership verification details",
+    30,
+    2000,
+  );
+  const verificationUrl = optionalHttpsUrl(
+    payload.verificationUrl,
+    "Ownership source",
+  );
 
   await db
     .prepare(
@@ -294,9 +310,10 @@ export async function createApplication(
         INSERT INTO buyblack_businesses (
           id, owner_user_id, owner_email, owner_name, name, slug, email, phone,
           category, description, website_url, image_url, address, city, state,
-          status, created_at, updated_at
+          submitter_relationship, ownership_confirmed, verification_url,
+          verification_details, status, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending',
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending',
           CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       `,
     )
@@ -316,6 +333,10 @@ export async function createApplication(
       optionalText(payload.address, 300),
       city,
       state,
+      submitterRelationship,
+      1,
+      verificationUrl,
+      verificationDetails,
     )
     .run();
 
@@ -333,59 +354,31 @@ export async function dashboard(user: GoodOsUser) {
   const ownerClause = admin ? "1 = 1" : "business.owner_user_id = ?";
   const ownerValues = admin ? [] : [user.id];
 
-  const [businessResult, productResult, orderResult] = await Promise.all([
-    db
-      .prepare(
-        `
-          SELECT ${businessProjection}
-          FROM buyblack_businesses AS business
-          LEFT JOIN buyblack_reviews AS review
-            ON review.business_id = business.id
-            AND review.status = 'published'
-          WHERE ${ownerClause}
-          GROUP BY business.id
-          ORDER BY business.created_at DESC
-          LIMIT 250
-        `,
-      )
-      .bind(...ownerValues)
-      .all<Row>(),
-    db
-      .prepare(
-        `
-          SELECT product.*
-          FROM buyblack_products AS product
-          JOIN buyblack_businesses AS business
-            ON business.id = product.business_id
-          WHERE ${ownerClause}
-          ORDER BY product.created_at DESC
-          LIMIT 500
-        `,
-      )
-      .bind(...ownerValues)
-      .all<Row>(),
-    db
-      .prepare(
-        `
-          SELECT orders.*, business.name AS business_name
-          FROM buyblack_orders AS orders
-          JOIN buyblack_businesses AS business
-            ON business.id = orders.business_id
-          WHERE ${ownerClause}
-          ORDER BY orders.created_at DESC
-          LIMIT 500
-        `,
-      )
-      .bind(...ownerValues)
-      .all<Row>(),
-  ]);
+  const businessResult = await db
+    .prepare(
+      `
+        SELECT business.*
+        FROM buyblack_businesses AS business
+        WHERE ${ownerClause}
+        ORDER BY
+          CASE business.status WHEN 'pending' THEN 0 WHEN 'verified' THEN 1 ELSE 2 END,
+          business.created_at DESC
+        LIMIT 250
+      `,
+    )
+    .bind(...ownerValues)
+    .all<Row>();
+
+  const businesses = (businessResult.results || []).map(businessFromRow);
 
   return {
     canAdmin: admin,
-    businesses: (businessResult.results || []).map(businessFromRow),
-    products: (productResult.results || []).map(productFromRow),
-    orders: (orderResult.results || []).map(orderFromRow),
-    payments: paymentReadiness(),
+    businesses,
+    stats: {
+      pending: businesses.filter((business) => business.status === "pending").length,
+      verified: businesses.filter((business) => business.status === "verified").length,
+      rejected: businesses.filter((business) => business.status === "rejected").length,
+    },
   };
 }
 
@@ -408,27 +401,82 @@ export async function updateBusinessStatus(
   }
 
   const db = getDb();
+  const current = await db
+    .prepare("SELECT * FROM buyblack_businesses WHERE id = ? LIMIT 1")
+    .bind(businessId)
+    .first<Row>();
+  if (!current) {
+    throw new ApiError("Business not found.", 404, "BUSINESS_NOT_FOUND");
+  }
+  const ownershipConfirmed =
+    payload.ownershipConfirmed === undefined
+      ? Boolean(current.ownership_confirmed)
+      : [true, "true", "on", 1, "1"].includes(
+          payload.ownershipConfirmed as never,
+        );
+  const verificationDetails =
+    status === "verified"
+      ? cleanText(
+          payload.verificationDetails || current.verification_details,
+          "Verification details",
+          30,
+          2000,
+        )
+      : optionalText(
+          payload.verificationDetails ?? current.verification_details,
+          2000,
+        );
+  const verificationUrl = optionalHttpsUrl(
+    payload.verificationUrl ?? current.verification_url,
+    "Verification source",
+  );
+  if (
+    status === "verified" &&
+    (!ownershipConfirmed || !verificationDetails)
+  ) {
+    throw new ApiError(
+      "Ownership attestation and verification details are required before publication.",
+      409,
+      "VERIFICATION_EVIDENCE_REQUIRED",
+    );
+  }
+  const reviewNote =
+    status === "pending"
+      ? optionalText(payload.reviewNote, 1000)
+      : cleanText(payload.reviewNote, "Curator note", 10, 1000);
   await db
     .prepare(
       `
         UPDATE buyblack_businesses
         SET status = ?,
             review_note = ?,
+            ownership_confirmed = ?,
+            verification_url = ?,
+            verification_details = ?,
+            verified_at = CASE WHEN ? = 'verified' THEN CURRENT_TIMESTAMP ELSE NULL END,
+            verified_by_user_id = CASE WHEN ? = 'verified' THEN ? ELSE NULL END,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `,
     )
-    .bind(status, optionalText(payload.reviewNote, 1000), businessId)
+    .bind(
+      status,
+      reviewNote,
+      ownershipConfirmed ? 1 : 0,
+      verificationUrl,
+      verificationDetails,
+      status,
+      status,
+      user.id,
+      businessId,
+    )
     .run();
 
   const updated = await db
     .prepare("SELECT * FROM buyblack_businesses WHERE id = ?")
     .bind(businessId)
     .first<Row>();
-  if (!updated) {
-    throw new ApiError("Business not found.", 404, "BUSINESS_NOT_FOUND");
-  }
-  return businessFromRow(updated);
+  return businessFromRow(updated || current);
 }
 
 async function ownedBusiness(

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, ShieldCheck, ShoppingBag, Store } from "lucide-react";
+import { CheckCircle2, ShieldCheck, Store } from "lucide-react";
 import {
   type GoodOSIdentityProviderRecord,
   GoodOSLoginShell,
@@ -18,7 +18,7 @@ function BuyBlackLoginStory() {
     <div className="relative isolate flex h-full min-h-screen flex-col overflow-hidden bg-[#120c0a] px-10 py-10 text-[#fffaf2] xl:px-16 xl:py-14">
       <div
         className="absolute inset-0 -z-20 bg-cover bg-[center_top] opacity-40"
-        style={{ backgroundImage: "url('/og.png')" }}
+        style={{ backgroundImage: "url('/og-directory.png')" }}
         aria-hidden="true"
       />
       <div
@@ -32,14 +32,14 @@ function BuyBlackLoginStory() {
 
       <header className="flex items-center gap-4">
         <span className="grid h-14 w-14 place-items-center rounded-2xl border border-[#c5a059]/55 bg-black/45 text-[#e2ad45] shadow-2xl backdrop-blur">
-          <ShoppingBag className="h-7 w-7" />
+          <Store className="h-7 w-7" />
         </span>
         <div>
           <p className="font-serif text-3xl font-bold leading-none">
             Buy<span className="text-[#c5a059]">Black</span>
           </p>
           <p className="mt-2 text-[10px] font-black uppercase tracking-[0.28em] text-[#e2ad45]">
-            Marketplace
+            Directory
           </p>
         </div>
       </header>
@@ -47,20 +47,20 @@ function BuyBlackLoginStory() {
       <div className="mt-auto max-w-2xl pb-8">
         <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-[#c5a059]/45 bg-black/35 px-4 py-2 text-xs font-black uppercase tracking-[0.2em] text-[#ebd6a8] backdrop-blur">
           <Store className="h-4 w-4" />
-          Community commerce, connected
+          Curated discovery, connected
         </div>
         <h1 className="max-w-xl font-serif text-[clamp(3.25rem,5vw,5.75rem)] font-medium leading-[0.96] tracking-[-0.045em]">
-          Discover more. Support with purpose.
+          Discover more. Support with intention.
         </h1>
         <p className="mt-7 max-w-xl text-lg leading-8 text-[#e8dfd6]">
-          Shop verified Black-owned businesses, follow the people behind the
-          products, and keep every order in one trusted marketplace.
+          Discover curator-reviewed Black-owned businesses and submit places
+          your community should know.
         </p>
 
         <div className="mt-9 grid max-w-xl gap-3 sm:grid-cols-3">
           {[
-            ["Verified", "Trusted businesses"],
-            ["Connected", "One community"],
+            ["Curated", "Ownership reviewed"],
+            ["Connected", "Direct discovery"],
             ["Secure", "GoodOS identity"],
           ].map(([title, copy]) => (
             <div
@@ -180,7 +180,7 @@ export default function AuthModal({
       >
         <GoodOSLoginWidget
           appName="BuyBlack"
-          subtitle="Access your marketplace, shops, orders, reviews, and community workspace."
+          subtitle="Submit Black-owned businesses and track curator decisions in one secure workspace."
           accent="#c9a227"
           accentInk="#090909"
           email={email}

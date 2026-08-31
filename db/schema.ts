@@ -26,8 +26,18 @@ export const businesses = sqliteTable(
     address: text("address"),
     city: text("city").notNull(),
     state: text("state").notNull(),
+    submitterRelationship: text("submitter_relationship")
+      .notNull()
+      .default("owner"),
+    ownershipConfirmed: integer("ownership_confirmed", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    verificationUrl: text("verification_url"),
+    verificationDetails: text("verification_details"),
     status: text("status").notNull().default("pending"),
     reviewNote: text("review_note"),
+    verifiedAt: text("verified_at"),
+    verifiedByUserId: text("verified_by_user_id"),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },

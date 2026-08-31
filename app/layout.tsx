@@ -3,9 +3,9 @@ import "../src/index.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://buyblack.goodos.app"),
-  title: "BuyBlack Marketplace",
+  title: "BuyBlack Directory",
   description:
-    "Discover, share, and support exceptional Black-owned businesses, creators, and brands.",
+    "Discover curator-reviewed Black-owned businesses across the United States.",
   applicationName: "BuyBlack",
   alternates: { canonical: "/" },
   robots: {
@@ -14,27 +14,27 @@ export const metadata: Metadata = {
   },
   manifest: "/site.webmanifest",
   openGraph: {
-    title: "BuyBlack Marketplace",
+    title: "BuyBlack Directory",
     description:
-      "Discover, share, and support exceptional Black-owned businesses, creators, and brands.",
+      "Discover curator-reviewed Black-owned businesses across the United States.",
     url: "https://buyblack.goodos.app",
-    siteName: "BuyBlack Marketplace",
+    siteName: "BuyBlack Directory",
     type: "website",
     images: [
       {
-        url: "/og.png",
-        width: 1729,
+        url: "/og-directory.png",
+        width: 1728,
         height: 910,
-        alt: "BuyBlack Marketplace — Support. Discover. Prosper.",
+        alt: "BuyBlack Directory — Curated Black-owned businesses",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "BuyBlack Marketplace",
+    title: "BuyBlack Directory",
     description:
-      "Discover, share, and support exceptional Black-owned businesses, creators, and brands.",
-    images: ["/og.png"],
+      "Discover curator-reviewed Black-owned businesses across the United States.",
+    images: ["/og-directory.png"],
   },
   icons: {
     icon: [

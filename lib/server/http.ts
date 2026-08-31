@@ -51,6 +51,25 @@ export function routeError(error: unknown) {
   );
 }
 
+export function retiredCommerce() {
+  return Response.json(
+    {
+      success: false,
+      code: "DIRECTORY_ONLY",
+      message:
+        "BuyBlack is a curated business directory and no longer provides commerce features.",
+    },
+    { status: 410, headers: { "Cache-Control": "no-store" } },
+  );
+}
+
+export function acknowledgeRetiredWebhook() {
+  return Response.json(
+    { success: true, data: { received: true, commerceRetired: true } },
+    { status: 200, headers: { "Cache-Control": "no-store" } },
+  );
+}
+
 export async function readJson<T extends Record<string, unknown>>(
   request: Request,
   maximumBytes = 64 * 1024,
