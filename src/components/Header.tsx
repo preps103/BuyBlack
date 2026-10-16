@@ -13,6 +13,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import type { AuthUser } from "../types";
+import { GoodOSFloatingSupportBar } from "@goodos/topbar-widget";
 
 type View = "home" | "admin" | "state_shops";
 
@@ -177,6 +178,7 @@ export default function Header({
           </div>
         </nav>
       </header>
+      <GoodOSFloatingSupportBar appName="BuyBlack" appId="buyblack" />
     </>
   );
 }

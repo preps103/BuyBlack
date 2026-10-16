@@ -4,15 +4,103 @@ import {
   createElement,
   isValidElement,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
 
-export const GOODOS_TOPBAR_WIDGET_VERSION = "3.0.0";
-export const GOODOS_LOGIN_WIDGET_VERSION = "1.7.0";
+export const GOODOS_TOPBAR_WIDGET_VERSION = "4.24.0";
+export const GOODOS_LOGIN_WIDGET_VERSION = "1.9.0";
 export const GOODOS_LOGIN_SHELL_VERSION = "1.2.0";
 export const GOODOS_AUTH_ORIGIN = "https://base.goodos.app";
 export const GOODOS_PASSKEY_ORIGIN = "https://goodos.app";
+export const GOODOS_APPEARANCE_STORAGE_KEY = "goodos_appearance_v1";
+export const GOODOS_ACCESSIBILITY_STORAGE_KEY = "goodos_accessibility_v1";
+const GOODOS_SUPPORT_BAR_STORAGE_KEY = "goodos_support_bar_v1";
+const GOODOS_SUPPORT_VIEWPORT_MARGIN = 14;
+const GOODOS_SUPPORT_EXPANDED_SIZE = { width: 258, height: 58 };
+const GOODOS_SUPPORT_MINIMIZED_SIZE = { width: 56, height: 56 };
+
+function supportViewportBounds() {
+  if (typeof window === "undefined") return { left: 0, top: 0, width: 0, height: 0 };
+  const viewport = window.visualViewport;
+  return {
+    left: viewport?.offsetLeft || 0,
+    top: viewport?.offsetTop || 0,
+    width: viewport?.width || window.innerWidth,
+    height: viewport?.height || window.innerHeight,
+  };
+}
+
+function clampSupportPosition(position, width, height) {
+  const viewport = supportViewportBounds();
+  const minX = viewport.left + GOODOS_SUPPORT_VIEWPORT_MARGIN;
+  const minY = viewport.top + GOODOS_SUPPORT_VIEWPORT_MARGIN;
+  const maxX = Math.max(minX, viewport.left + viewport.width - width - GOODOS_SUPPORT_VIEWPORT_MARGIN);
+  const maxY = Math.max(minY, viewport.top + viewport.height - height - GOODOS_SUPPORT_VIEWPORT_MARGIN);
+  return {
+    x: Math.max(minX, Math.min(Number(position?.x) || minX, maxX)),
+    y: Math.max(minY, Math.min(Number(position?.y) || minY, maxY)),
+  };
+}
+
+export const GOODOS_COLOR_SCHEMES = [
+  { id: "graphite-blue", name: "Graphite Blue", description: "Modern, sharp, and understated", colors: ["#07111f", "#2563eb", "#38bdf8"] },
+  { id: "deep-ocean", name: "Deep Ocean", description: "Cool navy with clean cyan energy", colors: ["#042f3e", "#0891b2", "#22d3ee"] },
+  { id: "evergreen", name: "Evergreen", description: "Confident green with natural depth", colors: ["#052e22", "#059669", "#84cc16"] },
+  { id: "carbon-ember", name: "Carbon Ember", description: "Warm graphite with a bold orange edge", colors: ["#21140f", "#ea580c", "#f59e0b"] },
+  { id: "purple-pulse", name: "Purple Pulse", description: "Expressive violet with electric energy", colors: ["#180d2a", "#7c3aed", "#d946ef"] },
+];
+
+function normalizeAppearance(value = {}) {
+  const mode = value.mode === "dark" ? "dark" : "light";
+  const scheme = GOODOS_COLOR_SCHEMES.some((item) => item.id === value.scheme)
+    ? value.scheme
+    : "graphite-blue";
+  return { mode, scheme };
+}
+
+export function readGoodOSAppearance() {
+  if (typeof window === "undefined") return { mode: "light", scheme: "graphite-blue" };
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(GOODOS_APPEARANCE_STORAGE_KEY) || "null");
+    if (stored) return normalizeAppearance(stored);
+  } catch {}
+  const legacy = window.localStorage.getItem("theme");
+  const mode = legacy === "dark" || (!legacy && window.matchMedia?.("(prefers-color-scheme: dark)").matches)
+    ? "dark"
+    : "light";
+  return { mode, scheme: "graphite-blue" };
+}
+
+export function applyGoodOSAppearance(value, { persist = true } = {}) {
+  const appearance = normalizeAppearance(value);
+  if (typeof document === "undefined") return appearance;
+  const scheme = GOODOS_COLOR_SCHEMES.find((item) => item.id === appearance.scheme);
+  const root = document.documentElement;
+  root.classList.toggle("dark", appearance.mode === "dark");
+  root.dataset.goodosMode = appearance.mode;
+  root.dataset.goodosScheme = appearance.scheme;
+  root.style.colorScheme = appearance.mode;
+  root.style.setProperty("--goodos-accent", scheme.colors[1]);
+  root.style.setProperty("--goodos-accent-strong", scheme.colors[2]);
+  root.style.setProperty("--goodos-accent-depth", scheme.colors[0]);
+  root.style.setProperty("--goodos-tone-1", scheme.colors[0]);
+  root.style.setProperty("--goodos-tone-2", scheme.colors[1]);
+  root.style.setProperty("--goodos-tone-3", scheme.colors[2]);
+  root.style.setProperty("--goodos-accent-soft", `color-mix(in srgb, ${scheme.colors[1]} 14%, transparent)`);
+  root.style.setProperty("--goodos-accent-medium", `color-mix(in srgb, ${scheme.colors[1]} 28%, transparent)`);
+  root.style.setProperty("--color-indigo-400", scheme.colors[2]);
+  root.style.setProperty("--color-indigo-500", scheme.colors[1]);
+  root.style.setProperty("--color-indigo-600", scheme.colors[1]);
+  root.style.setProperty("--color-indigo-700", scheme.colors[0]);
+  if (persist && typeof window !== "undefined") {
+    window.localStorage.setItem(GOODOS_APPEARANCE_STORAGE_KEY, JSON.stringify(appearance));
+    window.localStorage.setItem("theme", appearance.mode);
+  }
+  window.dispatchEvent(new CustomEvent("goodos:appearance-change", { detail: appearance }));
+  return appearance;
+}
 
 export async function loadGoodOSIdentityProviders(origin = GOODOS_AUTH_ORIGIN) {
   const response = await fetch(`${origin.replace(/\/$/, "")}/api/oidc/providers`, {
@@ -55,6 +143,98 @@ export function goodOSPasskeysSupported() {
     typeof window.PublicKeyCredential !== "undefined" &&
     typeof navigator !== "undefined" &&
     typeof navigator.credentials?.get === "function";
+}
+
+function decodeBase64Url(value) {
+  const normalized = String(value || "").replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized + "===".slice((normalized.length + 3) % 4);
+  const decoded = atob(padded);
+  return Uint8Array.from(decoded, (character) => character.charCodeAt(0));
+}
+
+function encodeBase64Url(value) {
+  const bytes = new Uint8Array(value);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function authenticationOptionsJSON(options) {
+  return {
+    ...options,
+    challenge: decodeBase64Url(options.challenge),
+    allowCredentials: (options.allowCredentials || []).map((credential) => ({
+      ...credential,
+      id: decodeBase64Url(credential.id),
+    })),
+  };
+}
+
+function authenticationCredentialJSON(credential) {
+  return {
+    id: credential.id,
+    rawId: encodeBase64Url(credential.rawId),
+    type: credential.type,
+    authenticatorAttachment: credential.authenticatorAttachment || undefined,
+    clientExtensionResults: credential.getClientExtensionResults(),
+    response: {
+      authenticatorData: encodeBase64Url(credential.response.authenticatorData),
+      clientDataJSON: encodeBase64Url(credential.response.clientDataJSON),
+      signature: encodeBase64Url(credential.response.signature),
+      userHandle: credential.response.userHandle
+        ? encodeBase64Url(credential.response.userHandle)
+        : undefined,
+    },
+  };
+}
+
+async function goodOSPasskeyRequest(path, options = {}) {
+  const response = await fetch(`${GOODOS_AUTH_ORIGIN}${path}`, {
+    ...options,
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.success === false) {
+    throw new Error(payload.message || payload.error || "GoodBase passkey sign-in failed.");
+  }
+  return payload.data || payload;
+}
+
+export async function authenticateWithGoodOSPasskey({ conditional = false, signal } = {}) {
+  if (!goodOSPasskeysSupported()) {
+    throw new Error("This browser cannot use a fingerprint or passkey.");
+  }
+  const ceremony = await goodOSPasskeyRequest(
+    "/api/auth/passkeys/authentication/options",
+    { method: "POST", body: "{}", signal },
+  );
+  const request = {
+    publicKey: authenticationOptionsJSON(ceremony.options),
+    signal,
+  };
+  if (conditional) request.mediation = "conditional";
+  const credential = await navigator.credentials.get(request);
+  if (!credential) throw new Error("No passkey was selected.");
+  const verified = await goodOSPasskeyRequest(
+    "/api/auth/passkeys/authentication/verify",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        challengeId: ceremony.challengeId,
+        response: authenticationCredentialJSON(credential),
+      }),
+      signal,
+    },
+  );
+  if (verified.token) {
+    try { localStorage.setItem("goodos_token", verified.token); } catch {}
+  }
+  return verified;
 }
 
 function classes(...values) {
@@ -168,6 +348,51 @@ function buildStructuredTopBar({
  * reserves the shared responsive bar height.
  */
 export function GoodOSTopBarWidget(props) {
+  const appName = props.appName || "GoodOS";
+  const notificationMode = props.notificationMode || (appName === "GoodOS" ? "master" : "application");
+  const notificationAppId = props.notificationAppId || (notificationMode === "master" ? "goodos" : null);
+
+  useEffect(() => {
+    const normalizeUniversalControls = () => {
+      document.querySelectorAll(".goodos-topbar").forEach((topbar) => {
+        topbar.setAttribute("data-goodos-notification-mode", notificationMode);
+        if (notificationAppId) topbar.setAttribute("data-goodos-notification-app-id", notificationAppId);
+        else topbar.removeAttribute("data-goodos-notification-app-id");
+
+        const controls = topbar.querySelector("[data-goodos-topbar-controls]");
+        if (!controls) return;
+
+        controls.querySelectorAll("button,a").forEach((control) => {
+          const label = `${control.getAttribute("aria-label") || ""} ${control.getAttribute("title") || ""}`.toLowerCase();
+          let kind = control.getAttribute("data-goodos-topbar-control");
+          if (!kind && /(appearance|theme|day|night)/.test(label)) kind = "theme";
+          if (!kind && /notification/.test(label)) kind = "notifications";
+          if (!kind && /(help|documentation|support guide)/.test(label)) kind = "help";
+          if (!kind) return;
+          control.setAttribute("data-goodos-topbar-control", kind);
+          control.style.order = kind === "theme" ? "1" : kind === "notifications" ? "2" : kind === "help" ? "3" : "4";
+          if (kind === "notifications") {
+            control.setAttribute("data-goodos-notification-trigger", "");
+            control.setAttribute("data-goodos-notification-mode", notificationMode);
+            if (notificationAppId) control.setAttribute("data-goodos-notification-app-id", notificationAppId);
+            if (!control.getAttribute("title")) control.setAttribute("title", notificationMode === "master" ? "All application notifications" : `${appName} notifications`);
+            const owner = control.closest("[data-goodos-notifications]");
+            if (owner) {
+              owner.setAttribute("data-goodos-notification-mode", notificationMode);
+              if (notificationAppId) owner.setAttribute("data-goodos-notification-app-id", notificationAppId);
+              owner.setAttribute("data-goodos-notification-entitlement-scope", notificationMode === "master" ? "accessible-apps" : "current-app");
+            }
+          }
+        });
+      });
+    };
+
+    normalizeUniversalControls();
+    const observer = new MutationObserver(normalizeUniversalControls);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [appName, notificationAppId, notificationMode]);
+
   const bar = props.children ?? buildStructuredTopBar(props);
   const instrumentedBar = isValidElement(bar)
     ? cloneElement(bar, {
@@ -175,7 +400,7 @@ export function GoodOSTopBarWidget(props) {
       })
     : bar;
   const mountedBar =
-    typeof document === "undefined"
+    typeof document === "undefined" || props.portal === false
       ? instrumentedBar
       : createPortal(instrumentedBar, document.body);
   const mountedProfile =
@@ -183,7 +408,26 @@ export function GoodOSTopBarWidget(props) {
       ? null
       : createPortal(
           createElement(UniversalProfileMenu, {
-            appName: props.appName || "GoodOS",
+            appName,
+          }),
+          document.body,
+        );
+  const mountedAppearance =
+    typeof document === "undefined"
+      ? null
+      : createPortal(
+          createElement(UniversalAppearanceMenu, {
+            appName,
+          }),
+          document.body,
+        );
+  const mountedSupport =
+    typeof document === "undefined"
+      ? null
+      : createPortal(
+          createElement(GoodOSFloatingSupportBar, {
+            appName,
+            appId: props.supportAppId || notificationAppId,
           }),
           document.body,
         );
@@ -191,6 +435,7 @@ export function GoodOSTopBarWidget(props) {
   return createElement(
     Fragment,
     null,
+    createElement("style", { "data-goodos-topbar-layout-styles": "" }, topbarCss),
     createElement("div", {
       className: "goodos-topbar-widget__spacer",
       "data-goodos-topbar-spacer": "",
@@ -198,7 +443,568 @@ export function GoodOSTopBarWidget(props) {
       "aria-hidden": "true",
     }),
     mountedBar,
+    mountedAppearance,
     mountedProfile,
+    mountedSupport,
+  );
+}
+
+function supportIcon(name) {
+  const common = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.9, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" };
+  if (name === "ada") return createElement("svg", { viewBox: "0 0 24 24", fill: "none", "aria-hidden": "true", "data-goodos-ada-icon": "wheelchair" },
+    createElement("circle", { cx: 9, cy: 3.75, r: 2.25, fill: "currentColor" }),
+    createElement("path", { d: "M8.2 7.05c0-1.05.86-1.9 1.9-1.9h.7c.92 0 1.7.66 1.87 1.56l.58 3.04h3.12a1.4 1.4 0 1 1 0 2.8H13.8l.25 1.3h2.42c.76 0 1.45.42 1.8 1.1l2.42 4.72-2.58 1.32-2.17-4.24h-3.1a1.9 1.9 0 0 1-1.87-1.55L8.23 7.4a1.9 1.9 0 0 1-.03-.35Z", fill: "currentColor" }),
+    createElement("path", { d: "M10.25 12.05a5.2 5.2 0 1 0 4.18 5.73", stroke: "currentColor", strokeWidth: 2.55, strokeLinecap: "round" })
+  );
+  if (name === "tutorial") return createElement("svg", common, createElement("path", { d: "M4 5.5A2.5 2.5 0 0 1 6.5 3H12v17H6.5A2.5 2.5 0 0 0 4 22V5.5Z" }), createElement("path", { d: "M20 5.5A2.5 2.5 0 0 0 17.5 3H12v17h5.5A2.5 2.5 0 0 1 20 22V5.5Z" }), createElement("path", { d: "m9 9 2 1.5L9 12" }));
+  if (name === "chat") return createElement("svg", common, createElement("path", { d: "M6 7h12a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3H9l-5 3v-5a3 3 0 0 1-1-2.2V10a3 3 0 0 1 3-3Z" }), createElement("path", { d: "M9 12h.01M13 12h.01M17 12h.01" }));
+  if (name === "live") return createElement("svg", common, createElement("path", { d: "M4 14v-3a8 8 0 0 1 16 0v3" }), createElement("path", { d: "M4 13h3v6H5a2 2 0 0 1-2-2v-2a2 2 0 0 1 1-2Zm16 0h-3v6h2a2 2 0 0 0 2-2v-2a2 2 0 0 0-1-2ZM17 19c0 1.1-.9 2-2 2h-3" }));
+  if (name === "restore") return createElement("svg", common, createElement("circle", { cx: 7, cy: 8, r: 1 }), createElement("circle", { cx: 12, cy: 8, r: 1 }), createElement("circle", { cx: 17, cy: 8, r: 1 }), createElement("circle", { cx: 7, cy: 16, r: 1 }), createElement("circle", { cx: 12, cy: 16, r: 1 }), createElement("circle", { cx: 17, cy: 16, r: 1 }));
+  return createElement("svg", common, createElement("rect", { x: 3, y: 5, width: 18, height: 14, rx: 2.5 }), createElement("path", { d: "m4 7 8 6 8-6" }));
+}
+
+function normalizeSupportAppId(value, appName) {
+  if (value) return String(value).trim().toLowerCase();
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname.toLowerCase();
+    if (host === "goodos.app" || host === "www.goodos.app") return "goodos";
+    const subdomain = host.endsWith(".goodos.app") ? host.slice(0, -".goodos.app".length) : "";
+    if (subdomain) return subdomain === "editor" ? "goodeditor" : subdomain;
+  }
+  return String(appName || "goodos").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+const SUPPORT_ASSISTANT_PROFILES = {
+  goodos: { summary: "I can help navigate the GoodOS ecosystem, applications, teams, billing, routing, security, and workspace administration.", suggestions: ["Find an application", "Manage my workspace", "Review system status"] },
+  goodfleet: {
+    summary: "I can help with vehicles, reservations, renters, availability, inspections, maintenance, payments, and fleet operations.",
+    suggestions: ["Manage a reservation", "Check vehicle availability", "Review maintenance"],
+  },
+  goodtrust: {
+    summary: "I can help with trusts, estate plans, beneficiaries, documents, approvals, secure records, and account workflows.",
+    suggestions: ["Start a trust workflow", "Manage beneficiaries", "Review documents"],
+  },
+  goodqr: {
+    summary: "I can help create and manage QR codes, campaigns, destinations, scans, analytics, branding, and exports.",
+    suggestions: ["Create a QR code", "Review scan analytics", "Export a QR code"],
+  },
+  goodnonprofit: { summary: "I can help with nonprofit programs, donors, campaigns, volunteers, grants, impact reporting, and organization settings.", suggestions: ["Review a campaign", "Manage donors", "Create an impact report"] },
+  goodgifting: { summary: "I can help create goal-based gift funds, invite contributors, track progress, manage recipients, and coordinate payouts.", suggestions: ["Create a gift fund", "Invite contributors", "Check funding progress"] },
+  dose: { summary: "I can help with DOSE content, experiences, schedules, community activity, and account workflows.", suggestions: ["Explore DOSE", "Manage my account", "Find an experience"] },
+  ghostcreationz: { summary: "I can help with Ghost Creationz products, creative services, orders, project requests, and customer support.", suggestions: ["Browse products", "Start a project", "Check an order"] },
+  solegodz: { summary: "I can help with footwear products, releases, inventory, orders, sizing, and customer support.", suggestions: ["Browse releases", "Check an order", "Find my size"] },
+  goodspeech: { summary: "I can help with speech generation, voices, recordings, pronunciation, audio projects, and exports.", suggestions: ["Create speech", "Choose a voice", "Export audio"] },
+  goodvoice: { summary: "I can help with voice projects, recordings, calls, audio processing, transcripts, and exports.", suggestions: ["Start a voice project", "Review a transcript", "Export audio"] },
+  goodswapz: { summary: "I can help with marketplace listings, swaps, offers, messages, shipping, and transaction history.", suggestions: ["Create a listing", "Review an offer", "Track a swap"] },
+  goodscan: { summary: "I can help capture, process, review, organize, and export 3D scans and connected-device sessions.", suggestions: ["Start a scan", "Connect a device", "Export a model"] },
+  goodescrow: { summary: "I can help with escrow transactions, parties, milestones, funding, approvals, documents, and releases.", suggestions: ["Start an escrow", "Review a milestone", "Check a release"] },
+  gooddesigner: { summary: "I can help create designs, manage canvases and assets, use brand tools, and export finished work.", suggestions: ["Create a design", "Use my brand kit", "Export a project"] },
+  goodeditor: { summary: "I can help open, edit, convert, and export creative files, manage layers and assets, and use studio tools.", suggestions: ["Open a file", "Edit a project", "Choose an export format"] },
+  goodboost: { summary: "I can help plan social content, manage campaigns, schedule posts, review engagement, and grow audiences.", suggestions: ["Create a campaign", "Schedule a post", "Review engagement"] },
+  goodsocial: { summary: "I can help plan social content, manage campaigns, schedule posts, review engagement, and grow audiences.", suggestions: ["Create a campaign", "Schedule a post", "Review engagement"] },
+  goodads: { summary: "I can help create advertising campaigns, audiences, creative assets, budgets, placements, and performance reports.", suggestions: ["Create a campaign", "Build an audience", "Review performance"] },
+  goodcustoms: { summary: "I can help manage vehicle customization projects, estimates, parts, appointments, work orders, and customer updates.", suggestions: ["Start a build", "Review an estimate", "Check project status"] },
+  goodagent: { summary: "I can help configure agents, connections, tasks, tools, activity, and automation workflows.", suggestions: ["Create an agent", "Review a connection", "Check task activity"] },
+  goodtrading: { summary: "I can help review markets, watchlists, positions, orders, risk controls, and trading activity.", suggestions: ["Review my watchlist", "Check a position", "Explain an order"] },
+  goodsupply: { summary: "I can help with supply operations, collections, inventory, customers, pricing, payouts, phone workflows, and team activity.", suggestions: ["Review inventory", "Manage a collection", "Find a customer"] },
+  goodmac: { summary: "I can help inspect storage, connect devices, review cleanup recommendations, manage applications, and check device health.", suggestions: ["Connect this Mac", "Review storage", "Run smart cleanup"] },
+  gearhead: { summary: "I can help with race events, cars, tuning, strategy, progression, standings, and player settings.", suggestions: ["Choose a race", "Tune my car", "Review standings"] },
+  goodgearhead: { summary: "I can help with race events, cars, tuning, strategy, progression, standings, and player settings.", suggestions: ["Choose a race", "Tune my car", "Review standings"] },
+  goodsure: { summary: "I can help with insurance quotes, policies, coverage, customers, claims, documents, and renewals.", suggestions: ["Start a quote", "Review coverage", "Check a claim"] },
+  insurance: { summary: "I can help with insurance quotes, policies, coverage, customers, claims, documents, and renewals.", suggestions: ["Start a quote", "Review coverage", "Check a claim"] },
+  buyblack: { summary: "I can help discover Black-owned businesses, browse products, manage marketplace listings, orders, and community activity.", suggestions: ["Find a business", "Browse products", "Check an order"] },
+  gpanel: { summary: "I can help administer applications, deployments, domains, services, access, infrastructure, and system health.", suggestions: ["Review system health", "Manage a deployment", "Check a domain"] },
+  panel: { summary: "I can help administer applications, deployments, domains, services, access, infrastructure, and system health.", suggestions: ["Review system health", "Manage a deployment", "Check a domain"] },
+  goodbuilder: { summary: "I can help build pages and applications, manage components, content, layouts, publishing, and project settings.", suggestions: ["Start a project", "Edit a page", "Publish my site"] },
+};
+
+const SUPPORT_ASSISTANT_ALIASES = {
+  ads: "goodads",
+  boost: "goodboost",
+  builder: "goodbuilder",
+  custom: "goodcustoms",
+  designer: "gooddesigner",
+  editor: "goodeditor",
+  escrow: "goodescrow",
+  fleet: "goodfleet",
+  gifting: "goodgifting",
+  insurance: "goodsure",
+  nonprofit: "goodnonprofit",
+  panel: "gpanel",
+  scan: "goodscan",
+  speech: "goodspeech",
+  supply: "goodsupply",
+  swapz: "goodswapz",
+  trading: "goodtrading",
+  trust: "goodtrust",
+  voice: "goodvoice",
+};
+
+function assistantProfile(appId, appName) {
+  const profileId = SUPPORT_ASSISTANT_ALIASES[appId] || appId;
+  return SUPPORT_ASSISTANT_PROFILES[profileId] || {
+    summary: `I can explain ${appName}'s tools, workflows, files, account access, and notifications.`,
+    suggestions: ["What can I do here?", "Help with this workflow", "Help with my account"],
+  };
+}
+
+function localAssistantReply(appName, appId, message) {
+  const query = message.toLowerCase();
+  const profile = assistantProfile(appId, appName);
+  if (appId === "goodfleet" && /vehicle|reservation|rental|renter|maintenance|inspection|availability/.test(query)) return "In GoodFleet, use the fleet workspace to review vehicle availability, open the renter or reservation record, and continue with inspections, maintenance, or rental actions without leaving GoodFleet.";
+  if (appId === "goodtrust" && /trust|estate|beneficiar|document|approval|record/.test(query)) return "In GoodTrust, open the relevant trust or estate record, then use its beneficiary, document, approval, and secure-record tools. I will keep guidance limited to GoodTrust workflows.";
+  if (appId === "goodqr" && /qr|scan|campaign|destination|analytic|export|download/.test(query)) return "In GoodQR, open or create a QR campaign, configure its destination and branding, then use the campaign workspace for testing, scan analytics, and export options.";
+  if (/export|download|file|format/.test(query)) return `Use ${appName}'s current workspace and its Export or Download action. I’ll only recommend formats and steps supported by ${appName}.`;
+  if (/login|sign in|password|account/.test(query)) return `For ${appName} account access, use the shared GoodOS sign-in. Account and password changes are managed from the profile menu so your identity remains consistent across GoodOS.`;
+  if (/notification|alert|bell/.test(query)) return `${appName}'s notification center shows alerts for this application only. Use the bell in the top bar to review, mark, or archive them.`;
+  if (/accessib|ada|contrast|text size/.test(query)) return `Use the wheelchair button in this floating bar to adjust ${appName}'s text, contrast, motion, focus, reading, and navigation settings in real time.`;
+  if (/what|help|can you|how/.test(query)) return `I am the ${appName} assistant. ${profile.summary}`;
+  return `I’ll keep this answer scoped to ${appName}. For “${message}”, start with the current ${appName} workspace and its Help control; if you need a person, use the headset button in this same bar.`;
+}
+
+export function GoodOSFloatingSupportBar({ appName = "GoodOS", appId: suppliedAppId } = {}) {
+  const appId = normalizeSupportAppId(suppliedAppId, appName);
+  const profile = assistantProfile(appId, appName);
+  const [accessibilityOpen, setAccessibilityOpen] = useState(false);
+  const [tutorialOpen, setTutorialOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantInput, setAssistantInput] = useState("");
+  const [assistantMessages, setAssistantMessages] = useState(() => [{ role: "assistant", text: `Hi — I’m the ${appName} assistant. ${profile.summary}` }]);
+  const [accessibilityTab, setAccessibilityTab] = useState("vision");
+  const [pointer, setPointer] = useState({ x: 0, y: 0 });
+  const barRef = useRef(null);
+  const dragRef = useRef(null);
+  const [barState, setBarState] = useState(() => {
+    if (typeof window === "undefined") return { minimized: false, position: null };
+    try { return { minimized: false, position: null, ...JSON.parse(localStorage.getItem(GOODOS_SUPPORT_BAR_STORAGE_KEY) || "{}") }; } catch { return { minimized: false, position: null }; }
+  });
+  const defaults = {
+    textSize: "default",
+    lineHeight: 1.5,
+    letterSpacing: 0,
+    wordSpacing: 0,
+    contrast: false,
+    grayscale: false,
+    invertColors: false,
+    colorProfile: "none",
+    reduceMotion: false,
+    readableFont: false,
+    underlineLinks: false,
+    focusIndicators: true,
+    oversizedPointer: false,
+    speechAssistant: false,
+    focusSpeaker: false,
+    mouseSpotlight: false,
+    concentrationMask: false,
+    readingBar: false,
+    magnifierLens: false,
+  };
+  const [accessibility, setAccessibility] = useState(() => {
+    if (typeof window === "undefined") return defaults;
+    try { return { ...defaults, ...JSON.parse(localStorage.getItem(GOODOS_ACCESSIBILITY_STORAGE_KEY) || "{}") }; } catch { return defaults; }
+  });
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.goodosTextSize = accessibility.textSize;
+    root.style.setProperty("--goodos-ada-line-height", String(accessibility.lineHeight));
+    root.style.setProperty("--goodos-ada-letter-spacing", `${accessibility.letterSpacing}px`);
+    root.style.setProperty("--goodos-ada-word-spacing", `${accessibility.wordSpacing}px`);
+    root.dataset.goodosHighContrast = String(accessibility.contrast);
+    root.dataset.goodosGrayscale = String(accessibility.grayscale);
+    root.dataset.goodosInvertColors = String(accessibility.invertColors);
+    root.dataset.goodosColorProfile = accessibility.colorProfile;
+    root.dataset.goodosReduceMotion = String(accessibility.reduceMotion);
+    root.dataset.goodosReadableFont = String(accessibility.readableFont);
+    root.dataset.goodosUnderlineLinks = String(accessibility.underlineLinks);
+    root.dataset.goodosFocusIndicators = String(accessibility.focusIndicators);
+    root.dataset.goodosOversizedPointer = String(accessibility.oversizedPointer);
+    localStorage.setItem(GOODOS_ACCESSIBILITY_STORAGE_KEY, JSON.stringify(accessibility));
+    window.dispatchEvent(new CustomEvent("goodos:accessibility-change", { detail: accessibility }));
+  }, [accessibility]);
+  useEffect(() => {
+    if (!accessibility.mouseSpotlight && !accessibility.concentrationMask && !accessibility.readingBar && !accessibility.magnifierLens) return undefined;
+    const trackPointer = (event) => setPointer({ x: event.clientX, y: event.clientY });
+    window.addEventListener("pointermove", trackPointer, { passive: true });
+    return () => window.removeEventListener("pointermove", trackPointer);
+  }, [accessibility.mouseSpotlight, accessibility.concentrationMask, accessibility.readingBar, accessibility.magnifierLens]);
+  useEffect(() => {
+    if (!accessibility.focusSpeaker || !("speechSynthesis" in window)) return undefined;
+    const speakFocused = (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement) || target.closest(".goodos-accessibility,.goodos-support-bar")) return;
+      const text = target.getAttribute("aria-label") || target.innerText?.trim();
+      if (!text || text.length > 220) return;
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+    };
+    document.addEventListener("focusin", speakFocused);
+    return () => { document.removeEventListener("focusin", speakFocused); window.speechSynthesis.cancel(); };
+  }, [accessibility.focusSpeaker]);
+  useEffect(() => {
+    if (!accessibility.speechAssistant || !("speechSynthesis" in window)) return undefined;
+    let lastText = "";
+    const speakHovered = (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement) || target.closest(".goodos-accessibility,.goodos-support-bar")) return;
+      const text = target.getAttribute("aria-label") || target.innerText?.trim();
+      if (!text || text === lastText || text.length > 220) return;
+      lastText = text;
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+    };
+    document.addEventListener("mouseover", speakHovered);
+    return () => { document.removeEventListener("mouseover", speakHovered); window.speechSynthesis.cancel(); };
+  }, [accessibility.speechAssistant]);
+  useEffect(() => {
+    if (!accessibilityOpen && !tutorialOpen && !assistantOpen) return undefined;
+    const close = (event) => { if (event.key === "Escape") { setAccessibilityOpen(false); setTutorialOpen(false); setAssistantOpen(false); } };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [accessibilityOpen, tutorialOpen, assistantOpen]);
+  useEffect(() => {
+    const keepVisible = () => setBarState((current) => {
+      if (!current.position || !barRef.current) return current;
+      const rect = barRef.current.getBoundingClientRect();
+      const position = clampSupportPosition(current.position, rect.width, rect.height);
+      if (position.x === current.position.x && position.y === current.position.y) return current;
+      const next = { ...current, position };
+      localStorage.setItem(GOODOS_SUPPORT_BAR_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+    keepVisible();
+    window.addEventListener("resize", keepVisible);
+    window.visualViewport?.addEventListener("resize", keepVisible);
+    window.visualViewport?.addEventListener("scroll", keepVisible);
+    return () => {
+      window.removeEventListener("resize", keepVisible);
+      window.visualViewport?.removeEventListener("resize", keepVisible);
+      window.visualViewport?.removeEventListener("scroll", keepVisible);
+    };
+  }, [barState.minimized]);
+  const saveBarState = (next) => {
+    setBarState(next);
+    localStorage.setItem(GOODOS_SUPPORT_BAR_STORAGE_KEY, JSON.stringify(next));
+  };
+  const onPointerDown = (event) => {
+    if (event.target.closest("a,button")) return;
+    const rect = barRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    dragRef.current = { pointerId: event.pointerId, offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setBarState((current) => ({ ...current, position: { x: rect.left, y: rect.top } }));
+  };
+  const onPointerMove = (event) => {
+    const drag = dragRef.current;
+    const rect = barRef.current?.getBoundingClientRect();
+    if (!drag || drag.pointerId !== event.pointerId || !rect) return;
+    setBarState((current) => ({ ...current, position: clampSupportPosition({ x: event.clientX - drag.offsetX, y: event.clientY - drag.offsetY }, rect.width, rect.height) }));
+  };
+  const onPointerUp = (event) => {
+    if (!dragRef.current || dragRef.current.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    setBarState((current) => { localStorage.setItem(GOODOS_SUPPORT_BAR_STORAGE_KEY, JSON.stringify(current)); return current; });
+  };
+  const moveWithKeyboard = (event) => {
+    if (!event.altKey || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+    event.preventDefault();
+    const rect = barRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const amount = event.shiftKey ? 24 : 8;
+    const dx = event.key === "ArrowLeft" ? -amount : event.key === "ArrowRight" ? amount : 0;
+    const dy = event.key === "ArrowUp" ? -amount : event.key === "ArrowDown" ? amount : 0;
+    saveBarState({ ...barState, position: clampSupportPosition({ x: rect.left + dx, y: rect.top + dy }, rect.width, rect.height) });
+  };
+  const updateAccessibility = (name, value) => setAccessibility((current) => ({ ...current, [name]: value }));
+  const openAssistant = () => {
+    setAccessibilityOpen(false);
+    setTutorialOpen(false);
+    setAssistantOpen((open) => !open);
+    window.dispatchEvent(new CustomEvent("goodos:open-chat", {
+      detail: { appId, appName, pageUrl: window.location.href },
+    }));
+  };
+  const openTutorial = () => {
+    setAccessibilityOpen(false);
+    setAssistantOpen(false);
+    const localTrigger = document.querySelector('[data-goodos-tutorial-trigger]:not([data-goodos-support-action]),button[aria-label*="tutorial" i]:not([data-goodos-support-action]),button[title*="tutorial" i]:not([data-goodos-support-action]),.tutorial-trigger:not([data-goodos-support-action]),.tutorial-button:not([data-goodos-support-action])');
+    if (localTrigger) {
+      localTrigger.click();
+      window.dispatchEvent(new CustomEvent("goodos:open-tutorial", { detail: { appId, appName, pageUrl: window.location.href, source: "shared-floating-bar" } }));
+      return;
+    }
+    setTutorialOpen((open) => !open);
+    window.dispatchEvent(new CustomEvent("goodos:open-tutorial", { detail: { appId, appName, pageUrl: window.location.href, source: "shared-floating-bar" } }));
+  };
+  const sendAssistantMessage = (event) => {
+    event.preventDefault();
+    const message = assistantInput.trim();
+    if (!message) return;
+    setAssistantInput("");
+    setAssistantMessages((current) => [...current, { role: "user", text: message }]);
+    let answered = false;
+    const respond = (text) => {
+      if (answered || !text) return;
+      answered = true;
+      setAssistantMessages((current) => [...current, { role: "assistant", text: String(text) }]);
+    };
+    window.dispatchEvent(new CustomEvent("goodos:assistant-message", {
+      detail: { appId, appName, message, pageUrl: window.location.href, respond },
+      cancelable: true,
+    }));
+    window.setTimeout(() => { if (!answered) respond(localAssistantReply(appName, appId, message)); }, 180);
+  };
+  const dispatch = (name, fallbackSelector, fallbackUrl) => {
+    const localTrigger = fallbackSelector && document.querySelector(`${fallbackSelector}:not([data-goodos-support-action])`);
+    if (localTrigger) {
+      localTrigger.click();
+      return;
+    }
+    const event = new CustomEvent(`goodos:open-${name}`, { detail: { appName }, cancelable: true });
+    const handled = !window.dispatchEvent(event);
+    if (!handled && fallbackUrl) window.open(fallbackUrl, "_blank", "noopener,noreferrer");
+  };
+  const actions = [
+    { id: "ada", label: "Accessibility controls", onClick: () => { setTutorialOpen(false); setAssistantOpen(false); setAccessibilityOpen((open) => !open); } },
+    { id: "tutorial", label: `Open ${appName} tutorials`, onClick: openTutorial },
+    { id: "chat", label: `Open ${appName} assistant`, onClick: openAssistant },
+    { id: "live", label: "Open live support", onClick: () => dispatch("live-support", '[data-goodos-live-support]', "https://goodos.app/?support=live") },
+    { id: "email", label: "Email support", href: "mailto:support@goodos.app" },
+  ];
+  const toggle = (id, label, description) => createElement("button", { type: "button", className: "goodos-accessibility__toggle", "aria-pressed": accessibility[id], onClick: () => updateAccessibility(id, !accessibility[id]) }, createElement("span", null, createElement("strong", null, label), createElement("small", null, description)), createElement("span", { "aria-hidden": "true" }, accessibility[id] ? "On" : "Off"));
+  const choice = (id, value, label) => createElement("button", { type: "button", className: "goodos-accessibility__choice", "aria-pressed": accessibility[id] === value, onClick: () => updateAccessibility(id, value) }, label);
+  const slider = (id, label, min, max, step, unit = "") => createElement("label", { className: "goodos-accessibility__slider" }, createElement("span", null, createElement("strong", null, label), createElement("output", null, `${accessibility[id]}${unit}`)), createElement("input", { type: "range", min, max, step, value: accessibility[id], onChange: (event) => updateAccessibility(id, Number(event.target.value)) }));
+  const tabButton = (id, label) => createElement("button", { type: "button", role: "tab", "aria-selected": accessibilityTab === id, onClick: () => setAccessibilityTab(id) }, label);
+  let accessibilityPanelContent;
+  if (accessibilityTab === "vision") {
+    accessibilityPanelContent = createElement(Fragment, null,
+      createElement("fieldset", null,
+        createElement("legend", null, "Visual filters"),
+        createElement("div", { className: "goodos-accessibility__choices" },
+          choice("contrast", false, "Standard"),
+          choice("contrast", true, "High contrast"),
+          toggle("grayscale", "Grayscale", "Remove decorative color from the application"),
+          toggle("invertColors", "Invert colors", "Reverse the display palette for stronger separation"),
+        ),
+      ),
+      createElement("fieldset", null,
+        createElement("legend", null, "Color vision profiles"),
+        createElement("div", { className: "goodos-accessibility__choices goodos-accessibility__choices--two" },
+          choice("colorProfile", "none", "Standard"),
+          choice("colorProfile", "protanopia", "Protanopia"),
+          choice("colorProfile", "deuteranopia", "Deuteranopia"),
+          choice("colorProfile", "tritanopia", "Tritanopia"),
+        ),
+      ),
+    );
+  } else if (accessibilityTab === "reading") {
+    accessibilityPanelContent = createElement(Fragment, null,
+      createElement("fieldset", null,
+        createElement("legend", null, "Text size"),
+        createElement("div", { className: "goodos-accessibility__sizes" }, ["default", "large", "larger"].map((size) => createElement("button", { key: size, type: "button", "aria-pressed": accessibility.textSize === size, onClick: () => updateAccessibility("textSize", size) }, size === "default" ? "100%" : size === "large" ? "112%" : "125%"))),
+      ),
+      slider("lineHeight", "Line height", 1.2, 2.2, .1, "×"),
+      slider("letterSpacing", "Letter spacing", 0, 4, .5, "px"),
+      slider("wordSpacing", "Word spacing", 0, 10, 1, "px"),
+      toggle("readableFont", "Readable typeface", "Use a clearer, weighted font across the application"),
+    );
+  } else if (accessibilityTab === "browse") {
+    accessibilityPanelContent = createElement(Fragment, null,
+      toggle("speechAssistant", "Speech assistant", "Read interface text aloud when it is hovered"),
+      toggle("focusSpeaker", "Focus speaker", "Announce controls as keyboard focus moves"),
+      toggle("oversizedPointer", "Oversized pointer", "Use a larger, high-visibility cursor"),
+      toggle("reduceMotion", "Reduce motion", "Stop nonessential animation and movement"),
+      toggle("underlineLinks", "Highlight controls", "Underline links and outline interactive controls"),
+      toggle("focusIndicators", "Focus indicators", "Show stronger outlines during keyboard navigation"),
+    );
+  } else {
+    accessibilityPanelContent = createElement(Fragment, null,
+      toggle("mouseSpotlight", "Mouse spotlight", "Create a visible halo around the pointer"),
+      toggle("concentrationMask", "Concentration mask", "Shade content outside the current pointer area"),
+      toggle("readingBar", "Visual reading bar", "Track the current line with a horizontal guide"),
+      toggle("magnifierLens", "Magnifier lens", "Increase contrast around the pointer area"),
+    );
+  }
+  return createElement(
+    Fragment,
+    null,
+    createElement("style", { "data-goodos-support-styles": "" }, topbarCss),
+    (accessibility.mouseSpotlight || accessibility.concentrationMask) && createElement("div", { className: "goodos-accessibility-effect goodos-accessibility-effect--spotlight", style: { "--goodos-pointer-x": `${pointer.x}px`, "--goodos-pointer-y": `${pointer.y}px`, "--goodos-mask-opacity": accessibility.concentrationMask ? ".76" : ".5", "--goodos-mask-radius": accessibility.concentrationMask ? "160px" : "95px" }, "aria-hidden": "true" }),
+    accessibility.readingBar && createElement("div", { className: "goodos-accessibility-effect goodos-accessibility-effect--reading-bar", style: { top: `${pointer.y - 24}px` }, "aria-hidden": "true" }),
+    accessibility.magnifierLens && createElement("div", { className: "goodos-accessibility-effect goodos-accessibility-effect--magnifier", style: { left: `${pointer.x - 72}px`, top: `${pointer.y - 72}px` }, "aria-hidden": "true" }),
+    accessibilityOpen && createElement("section", { className: "goodos-accessibility", role: "dialog", "aria-modal": "false", "aria-label": `${appName} accessibility settings` },
+      createElement("div", { className: "goodos-accessibility__header" }, createElement("div", null, createElement("strong", null, "Accessibility"), createElement("span", null, `Adjust ${appName} in real time.`)), createElement("button", { type: "button", onClick: () => setAccessibilityOpen(false), "aria-label": "Close accessibility settings" }, "×")),
+      createElement("div", { className: "goodos-accessibility__tabs", role: "tablist", "aria-label": "Accessibility feature categories" }, tabButton("vision", "Vision"), tabButton("reading", "Reading"), tabButton("browse", "Browse"), tabButton("focus", "Focus")),
+      createElement("div", { className: "goodos-accessibility__content" }, accessibilityPanelContent),
+      createElement("div", { className: "goodos-accessibility__footer" }, createElement("span", null, "Changes are saved on this device."), createElement("button", { type: "button", className: "goodos-accessibility__reset", onClick: () => setAccessibility(defaults) }, "Reset"))
+    ),
+    tutorialOpen && createElement("section", { className: "goodos-tutorial", role: "dialog", "aria-modal": "false", "aria-label": `${appName} tutorials`, "data-goodos-tutorial-app-id": appId },
+      createElement("header", { className: "goodos-tutorial__header" }, createElement("div", null, createElement("strong", null, `${appName} Tutorials`), createElement("span", null, `Learn the essential ${appName} workflow without leaving this application.`)), createElement("button", { type: "button", onClick: () => setTutorialOpen(false), "aria-label": "Close tutorials" }, "×")),
+      createElement("ol", { className: "goodos-tutorial__steps" }, profile.suggestions.map((suggestion, index) => createElement("li", { key: suggestion }, createElement("span", null, index + 1), createElement("div", null, createElement("strong", null, suggestion), createElement("p", null, `Open the related ${appName} workspace, review the available controls, and complete this task using only ${appName} data.`))))),
+      createElement("footer", { className: "goodos-tutorial__footer" }, createElement("span", null, `Tutorials are scoped to ${appName}.`), createElement("button", { type: "button", onClick: () => { setTutorialOpen(false); openAssistant(); } }, "Ask the assistant"))
+    ),
+    assistantOpen && createElement("section", { className: "goodos-assistant", role: "dialog", "aria-modal": "false", "aria-label": `${appName} assistant`, "data-goodos-assistant-app-id": appId },
+      createElement("header", { className: "goodos-assistant__header" }, createElement("div", null, createElement("strong", null, `${appName} Assistant`), createElement("span", null, "Answers are limited to this application.")), createElement("button", { type: "button", onClick: () => setAssistantOpen(false), "aria-label": "Close assistant" }, "×")),
+      createElement("div", { className: "goodos-assistant__messages", "aria-live": "polite" }, assistantMessages.map((message, index) => createElement("p", { key: `${message.role}-${index}`, className: `goodos-assistant__message goodos-assistant__message--${message.role}` }, message.text))),
+      createElement("div", { className: "goodos-assistant__suggestions" }, profile.suggestions.map((suggestion) => createElement("button", { key: suggestion, type: "button", onClick: () => setAssistantInput(suggestion) }, suggestion))),
+      createElement("form", { className: "goodos-assistant__form", onSubmit: sendAssistantMessage }, createElement("input", { value: assistantInput, onChange: (event) => setAssistantInput(event.target.value), placeholder: `Ask about ${appName}…`, "aria-label": `Ask the ${appName} assistant` }), createElement("button", { type: "submit", disabled: !assistantInput.trim() }, "Send"))
+    ),
+    createElement("nav", { ref: barRef, className: `goodos-support-bar${barState.minimized ? " goodos-support-bar--minimized" : ""}`, "data-goodos-support-bar": "", "data-goodos-support-app-id": appId, "aria-label": `${appName} support. Drag the empty edge to move, or use Alt plus arrow keys.`, tabIndex: 0, style: barState.position ? { left: `${barState.position.x}px`, top: `${barState.position.y}px`, right: "auto", bottom: "auto", transform: "none" } : undefined, onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp, onKeyDown: moveWithKeyboard },
+      barState.minimized
+        ? createElement("button", { type: "button", className: "goodos-support-bar__action goodos-support-bar__restore", onClick: () => saveBarState({ ...barState, minimized: false, position: barState.position ? clampSupportPosition(barState.position, GOODOS_SUPPORT_EXPANDED_SIZE.width, GOODOS_SUPPORT_EXPANDED_SIZE.height) : null }), "aria-label": "Show support tools", title: "Show support tools" }, supportIcon("restore"))
+        : createElement(Fragment, null,
+          createElement("button", { type: "button", className: "goodos-support-bar__minimize", onClick: () => { setAccessibilityOpen(false); setTutorialOpen(false); setAssistantOpen(false); saveBarState({ ...barState, minimized: true, position: barState.position ? clampSupportPosition(barState.position, GOODOS_SUPPORT_MINIMIZED_SIZE.width, GOODOS_SUPPORT_MINIMIZED_SIZE.height) : null }); }, "aria-label": "Hide support tools", title: "Hide support tools" }, "−"),
+          actions.map((action) => createElement(action.href ? "a" : "button", { key: action.id, className: "goodos-support-bar__action", "data-goodos-support-action": action.id, ...(action.id === "ada" ? { "data-goodos-ada-monochrome": "locked" } : {}), "aria-label": action.label, title: action.label, ...(action.href ? { href: action.href } : { type: "button", onClick: action.onClick }), ...(action.id === "ada" ? { "aria-expanded": accessibilityOpen } : {}), ...(action.id === "tutorial" ? { "aria-expanded": tutorialOpen } : {}), ...(action.id === "chat" ? { "aria-expanded": assistantOpen } : {}) }, supportIcon(action.id), createElement("span", { className: "goodos-support-bar__label" }, action.label)))
+        )
+    )
+  );
+}
+
+const topbarCss = String.raw`
+.goodos-assistant{position:fixed;z-index:2147483002;right:max(18px,env(safe-area-inset-right));bottom:100px;display:flex;width:min(390px,calc(100vw - 24px));max-height:min(620px,calc(100dvh - 124px));overflow:hidden;flex-direction:column;border:1px solid color-mix(in srgb,var(--goodos-tone-2,#2563eb) 38%,#cbd5e1);border-radius:22px;background:linear-gradient(155deg,color-mix(in srgb,Canvas 97%,var(--goodos-tone-3,#38bdf8)),color-mix(in srgb,Canvas 93%,var(--goodos-tone-1,#07111f)));color:CanvasText;box-shadow:0 24px 70px color-mix(in srgb,var(--goodos-tone-1,#07111f) 38%,transparent),0 8px 28px color-mix(in srgb,var(--goodos-tone-2,#2563eb) 16%,transparent);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.goodos-assistant__header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px;border-bottom:1px solid color-mix(in srgb,currentColor 12%,transparent);background:linear-gradient(115deg,color-mix(in srgb,var(--goodos-tone-2,#2563eb) 12%,transparent),color-mix(in srgb,var(--goodos-tone-3,#38bdf8) 6%,transparent))}.goodos-assistant__header strong,.goodos-assistant__header span{display:block}.goodos-assistant__header strong{font-size:17px}.goodos-assistant__header span{margin-top:3px;font-size:12px;opacity:.68}.goodos-assistant__header button{width:34px;height:34px;border:1px solid color-mix(in srgb,currentColor 16%,transparent);border-radius:11px;background:transparent;color:inherit;cursor:pointer;font-size:22px}.goodos-assistant__messages{display:flex;min-height:180px;overflow:auto;flex:1;flex-direction:column;gap:9px;padding:16px}.goodos-assistant__message{max-width:88%;margin:0;padding:10px 12px;border:1px solid color-mix(in srgb,currentColor 11%,transparent);border-radius:14px;background:color-mix(in srgb,Canvas 91%,var(--goodos-tone-1,#07111f));font-size:13px;line-height:1.48}.goodos-assistant__message--user{align-self:flex-end;border-color:color-mix(in srgb,var(--goodos-tone-2,#2563eb) 45%,transparent);background:linear-gradient(135deg,color-mix(in srgb,var(--goodos-tone-2,#2563eb) 22%,Canvas),color-mix(in srgb,var(--goodos-tone-3,#38bdf8) 12%,Canvas))}.goodos-assistant__suggestions{display:flex;gap:6px;padding:0 14px 10px;overflow:auto}.goodos-assistant__suggestions button{flex:0 0 auto;padding:7px 9px;border:1px solid color-mix(in srgb,var(--goodos-tone-2,#2563eb) 28%,currentColor);border-radius:999px;background:transparent;color:inherit;cursor:pointer;font:inherit;font-size:11px}.goodos-assistant__form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:12px;border-top:1px solid color-mix(in srgb,currentColor 12%,transparent)}.goodos-assistant__form input{min-width:0;height:42px;padding:0 12px;border:1px solid color-mix(in srgb,currentColor 18%,transparent);border-radius:12px;background:color-mix(in srgb,Canvas 94%,var(--goodos-tone-2,#2563eb));color:inherit;font:inherit}.goodos-assistant__form button{padding:0 16px;border:0;border-radius:12px;background:linear-gradient(135deg,var(--goodos-tone-2,#2563eb),var(--goodos-tone-3,#38bdf8));color:#fff;cursor:pointer;font:inherit;font-weight:750}.goodos-assistant__form button:disabled{opacity:.45;cursor:not-allowed}
+.goodos-tutorial{position:fixed;z-index:2147483002;right:max(18px,env(safe-area-inset-right));bottom:100px;width:min(420px,calc(100vw - 24px));overflow:hidden;border:1px solid color-mix(in srgb,var(--goodos-tone-2,#2563eb) 38%,#cbd5e1);border-radius:22px;background:linear-gradient(155deg,color-mix(in srgb,Canvas 97%,var(--goodos-tone-3,#38bdf8)),color-mix(in srgb,Canvas 93%,var(--goodos-tone-1,#07111f)));color:CanvasText;box-shadow:0 24px 70px color-mix(in srgb,var(--goodos-tone-1,#07111f) 38%,transparent),0 8px 28px color-mix(in srgb,var(--goodos-tone-2,#2563eb) 16%,transparent);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.goodos-tutorial__header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px;border-bottom:1px solid color-mix(in srgb,currentColor 12%,transparent);background:linear-gradient(115deg,color-mix(in srgb,var(--goodos-tone-2,#2563eb) 12%,transparent),color-mix(in srgb,var(--goodos-tone-3,#38bdf8) 6%,transparent))}.goodos-tutorial__header strong,.goodos-tutorial__header span{display:block}.goodos-tutorial__header strong{font-size:17px}.goodos-tutorial__header span{margin-top:3px;font-size:12px;line-height:1.4;opacity:.68}.goodos-tutorial__header button{display:grid;width:34px;height:34px;flex:0 0 34px;place-items:center;border:1px solid color-mix(in srgb,currentColor 16%,transparent);border-radius:11px;background:transparent;color:inherit;cursor:pointer;font-size:22px}.goodos-tutorial__steps{display:grid;gap:9px;margin:0;padding:16px;list-style:none}.goodos-tutorial__steps li{display:grid;grid-template-columns:32px minmax(0,1fr);gap:10px;padding:11px;border:1px solid color-mix(in srgb,currentColor 11%,transparent);border-radius:14px;background:color-mix(in srgb,Canvas 92%,var(--goodos-tone-2,#2563eb))}.goodos-tutorial__steps li>span{display:grid;width:32px;height:32px;place-items:center;border-radius:10px;background:linear-gradient(135deg,var(--goodos-tone-2,#2563eb),var(--goodos-tone-3,#38bdf8));color:#fff;font-size:13px;font-weight:850}.goodos-tutorial__steps strong{font-size:13px}.goodos-tutorial__steps p{margin:4px 0 0;font-size:11px;line-height:1.45;opacity:.7}.goodos-tutorial__footer{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;border-top:1px solid color-mix(in srgb,currentColor 12%,transparent)}.goodos-tutorial__footer span{font-size:11px;opacity:.65}.goodos-tutorial__footer button{min-height:38px;padding:0 13px;border:0;border-radius:11px;background:linear-gradient(135deg,var(--goodos-tone-2,#2563eb),var(--goodos-tone-3,#38bdf8));color:#fff;cursor:pointer;font:inherit;font-size:12px;font-weight:800}
+@media(max-width:600px){.goodos-assistant,.goodos-tutorial{right:12px;bottom:78px;width:calc(100vw - 24px);max-height:calc(100dvh - 96px)}.goodos-tutorial{overflow:auto}}
+:root{--goodos-topbar-height:72px;--goodos-topbar-gutter:24px;--goodos-topbar-control-size:44px;--goodos-topbar-icon-size:22px}
+.goodos-topbar-widget__spacer{display:block;height:var(--goodos-topbar-height);flex:0 0 var(--goodos-topbar-height)}
+.goodos-topbar[data-goodos-topbar]{position:fixed!important;z-index:2147483000!important;inset:0 0 auto!important;display:grid!important;grid-template-columns:auto minmax(180px,360px) minmax(0,1fr) auto!important;align-items:center!important;gap:16px!important;width:100%!important;min-height:var(--goodos-topbar-height)!important;padding:0 var(--goodos-topbar-gutter)!important;box-sizing:border-box!important;border-bottom:1px solid color-mix(in srgb,currentColor 10%,transparent)!important}
+.goodos-topbar__identity{display:flex;min-width:0;align-items:center;gap:10px}.goodos-topbar__brand{display:flex;min-width:0;align-items:center;gap:10px;border:0;background:transparent;color:inherit;cursor:pointer;font:inherit;font-weight:750;white-space:nowrap}.goodos-topbar__brand-mark{display:grid;width:40px;height:40px;flex:0 0 40px;place-items:center;border-radius:12px}.goodos-topbar__workspace{max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.goodos-topbar__search{position:relative;display:flex;width:100%;max-width:360px;min-width:0;align-items:center;justify-self:start;transition:width 180ms ease,max-width 180ms ease,box-shadow 180ms ease}.goodos-topbar__search input{width:100%;min-width:0}.goodos-topbar__actions{display:flex;min-width:0;align-items:center;justify-content:flex-start;gap:8px;overflow:hidden}.goodos-topbar__controls{display:flex;align-items:center;justify-content:flex-end;gap:6px;white-space:nowrap}
+.goodos-topbar [data-goodos-topbar-control]{display:inline-grid!important;width:var(--goodos-topbar-control-size)!important;min-width:var(--goodos-topbar-control-size)!important;height:var(--goodos-topbar-control-size)!important;min-height:var(--goodos-topbar-control-size)!important;place-items:center!important;padding:0!important;border-radius:12px!important;box-sizing:border-box!important}.goodos-topbar__actions>button,.goodos-topbar__actions>a{display:inline-flex!important;width:auto!important;min-width:var(--goodos-topbar-control-size)!important;min-height:var(--goodos-topbar-control-size)!important;align-items:center!important;justify-content:center!important;gap:7px!important;padding:0 12px!important;border-radius:12px!important;box-sizing:border-box!important;white-space:nowrap!important}
+.goodos-topbar [data-goodos-topbar-control] svg,.goodos-topbar__actions>button svg,.goodos-topbar__actions>a svg{width:var(--goodos-topbar-icon-size)!important;height:var(--goodos-topbar-icon-size)!important;stroke-width:2!important}.goodos-topbar [data-goodos-topbar-control="account"] img{width:32px!important;height:32px!important;border-radius:50%!important;object-fit:cover!important}
+.goodos-topbar [data-goodos-topbar-control="notifications"]{position:relative!important;overflow:visible!important;text-indent:-9999px!important}.goodos-topbar [data-goodos-topbar-control="notifications"]>svg{display:none!important}.goodos-topbar [data-goodos-topbar-control="notifications"]::before{display:block;width:var(--goodos-topbar-icon-size);height:var(--goodos-topbar-icon-size);background:currentColor;content:"";mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9'/%3E%3Cpath d='M13.73 21a2 2 0 0 1-3.46 0'/%3E%3C/svg%3E") center/contain no-repeat;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9'/%3E%3Cpath d='M13.73 21a2 2 0 0 1-3.46 0'/%3E%3C/svg%3E") center/contain no-repeat;text-indent:0}.goodos-topbar [data-goodos-notification-badge],.goodos-topbar [data-goodos-topbar-control="notifications"] :is(.os-notification-count,[class*="badge"],[class*="count"]){position:absolute!important;top:2px!important;right:2px!important;display:grid!important;min-width:18px!important;height:18px!important;place-items:center!important;padding:0 5px!important;border:2px solid Canvas!important;border-radius:999px!important;background:#e11d48!important;color:#fff!important;font:800 10px/1 sans-serif!important;text-indent:0!important;box-sizing:border-box!important}
+@media(max-width:1120px){:root{--goodos-topbar-gutter:16px}.goodos-topbar[data-goodos-topbar]{grid-template-columns:auto minmax(160px,280px) minmax(0,1fr) auto!important;gap:10px!important}.goodos-topbar__workspace{display:none}}
+@media(max-width:820px){.goodos-topbar[data-goodos-topbar]{grid-template-columns:auto var(--goodos-topbar-control-size) minmax(0,1fr) auto!important}.goodos-topbar__search{width:var(--goodos-topbar-control-size);height:var(--goodos-topbar-control-size);overflow:hidden;border-radius:12px;justify-self:end}.goodos-topbar__search input{width:0!important;min-width:0!important;padding-right:0!important;opacity:0!important;pointer-events:none!important}.goodos-topbar__search:focus-within{position:absolute;z-index:4;right:calc(var(--goodos-topbar-gutter) + 190px);width:min(340px,calc(100vw - 210px));max-width:none;height:var(--goodos-topbar-control-size);overflow:visible;box-shadow:0 12px 36px rgba(15,23,42,.18)}.goodos-topbar__search:focus-within input{width:100%!important;padding-right:12px!important;opacity:1!important;pointer-events:auto!important}.goodos-topbar__actions{gap:4px}}
+@media(max-width:600px){:root{--goodos-topbar-height:64px;--goodos-topbar-gutter:10px;--goodos-topbar-control-size:42px}.goodos-topbar[data-goodos-topbar]{grid-template-columns:auto var(--goodos-topbar-control-size) minmax(0,1fr) auto!important;gap:4px!important}.goodos-topbar__brand>span:last-child{display:none}.goodos-topbar__brand-mark{width:40px;height:40px}.goodos-topbar__controls{gap:2px}.goodos-topbar__actions{overflow-x:auto;scrollbar-width:none}.goodos-topbar__actions::-webkit-scrollbar{display:none}.goodos-topbar__search:focus-within{right:calc(var(--goodos-topbar-gutter) + 136px);width:calc(100vw - 158px)}}
+.goodos-support-bar{max-width:calc(100vw - 28px);box-sizing:border-box}
+.goodos-support-bar{position:fixed;z-index:2147482999;right:max(18px,env(safe-area-inset-right));bottom:max(18px,env(safe-area-inset-bottom));display:flex;align-items:center;gap:6px;padding:6px;border:1px solid color-mix(in srgb,var(--goodos-tone-3,#38bdf8) 42%,rgba(255,255,255,.32));border-radius:20px;background:linear-gradient(135deg,color-mix(in srgb,var(--goodos-tone-1,#07111f) 18%,var(--goodos-tone-2,#2563eb)),var(--goodos-tone-2,#2563eb) 52%,var(--goodos-tone-3,#38bdf8));box-shadow:0 14px 32px color-mix(in srgb,var(--goodos-tone-1,#07111f) 32%,transparent),inset 0 1px rgba(255,255,255,.28);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;touch-action:none;user-select:none;cursor:grab;transition:background 180ms ease,border-color 180ms ease,box-shadow 180ms ease}.goodos-support-bar:active{cursor:grabbing}.goodos-support-bar:focus-visible{outline:3px solid color-mix(in srgb,var(--goodos-tone-3,#38bdf8) 72%,white);outline-offset:3px}.goodos-support-bar--minimized{gap:0;padding:5px;border-radius:17px}.goodos-support-bar__minimize{position:absolute;z-index:2;top:-9px;right:-9px;display:grid;width:22px;height:22px;place-items:center;padding:0;border:1px solid color-mix(in srgb,var(--goodos-tone-3,#38bdf8) 45%,#64748b);border-radius:50%;background:color-mix(in srgb,var(--goodos-tone-1,#07111f) 92%,#020617);color:#fff;cursor:pointer;font:700 16px/1 sans-serif;box-shadow:0 4px 10px rgba(2,6,23,.24)}.goodos-support-bar__action{position:relative;display:grid;width:44px;height:44px;flex:0 0 44px;place-items:center;padding:0;border:1px solid color-mix(in srgb,var(--goodos-tone-3,#38bdf8) 34%,#64748b);border-radius:14px;background:color-mix(in srgb,var(--goodos-tone-1,#07111f) 88%,#020617);color:#fff;text-decoration:none;cursor:pointer;box-shadow:inset 0 1px rgba(255,255,255,.08),0 5px 12px rgba(2,6,23,.22);transition:transform 150ms ease,border-color 150ms ease,background 150ms ease}.goodos-support-bar__action:hover{transform:translateY(-2px);border-color:var(--goodos-tone-3,#38bdf8);background:color-mix(in srgb,var(--goodos-tone-1,#07111f) 78%,var(--goodos-tone-2,#2563eb))}.goodos-support-bar__action:focus-visible{outline:3px solid color-mix(in srgb,var(--goodos-tone-3,#38bdf8) 70%,white);outline-offset:3px}.goodos-support-bar__action svg{width:22px;height:22px}.goodos-support-bar__label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.goodos-support-bar__action[data-goodos-ada-monochrome="locked"]{border-color:#475569!important;background:#050505!important;color:#fff!important}.goodos-support-bar__action[data-goodos-ada-monochrome="locked"]:hover{border-color:#94a3b8!important;background:#111!important;color:#fff!important}.goodos-support-bar__action[data-goodos-ada-monochrome="locked"] svg{color:#fff!important;filter:none!important}
+body:has(.goodos-support-bar) [data-goodos-ada-trigger]:not([data-goodos-support-action]),body:has(.goodos-support-bar) [data-goodos-chat-launcher]:not([data-goodos-support-action]),body:has(.goodos-support-bar) [data-goodos-live-support]:not([data-goodos-support-action]),body:has(.goodos-support-bar) .ada-control,body:has(.goodos-support-bar) .ada-button,body:has(.goodos-support-bar) button[aria-label*="accessibility" i]:not([data-goodos-support-action]),body:has(.goodos-support-bar) button[aria-label*="ADA" i]:not([data-goodos-support-action]){position:fixed!important;width:1px!important;height:1px!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;clip-path:inset(50%)!important;white-space:nowrap!important;opacity:0!important;pointer-events:none!important}
+body:has(.goodos-support-bar) [data-goodos-tutorial-trigger]:not([data-goodos-support-action]),body:has(.goodos-support-bar) .tutorial-trigger:not([data-goodos-support-action]),body:has(.goodos-support-bar) .tutorial-button:not([data-goodos-support-action]),body:has(.goodos-support-bar) button[aria-label*="tutorial" i]:not([data-goodos-support-action]),body:has(.goodos-support-bar) button[title*="tutorial" i]:not([data-goodos-support-action]){position:fixed!important;width:1px!important;height:1px!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;clip-path:inset(50%)!important;white-space:nowrap!important;opacity:0!important;pointer-events:none!important}
+.goodos-accessibility{position:fixed;z-index:2147483002;right:max(18px,env(safe-area-inset-right));bottom:100px;width:min(340px,calc(100vw - 24px));padding:16px;border:1px solid color-mix(in srgb,var(--goodos-tone-2,#2563eb) 35%,#cbd5e1);border-radius:20px;background:color-mix(in srgb,Canvas 96%,var(--goodos-tone-3,#38bdf8));color:CanvasText;box-shadow:0 22px 60px rgba(2,6,23,.26);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.goodos-accessibility__header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}.goodos-accessibility__header strong,.goodos-accessibility__header span{display:block}.goodos-accessibility__header strong{font-size:18px}.goodos-accessibility__header span{margin-top:3px;font-size:13px;opacity:.7}.goodos-accessibility__header button{width:36px;height:36px;border:1px solid color-mix(in srgb,currentColor 18%,transparent);border-radius:11px;background:transparent;color:inherit;font-size:24px;cursor:pointer}.goodos-accessibility fieldset{margin:0 0 10px;padding:0;border:0}.goodos-accessibility legend{margin-bottom:7px;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.goodos-accessibility__sizes{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.goodos-accessibility__sizes button,.goodos-accessibility__toggle,.goodos-accessibility__reset{min-height:42px;border:1px solid color-mix(in srgb,currentColor 16%,transparent);border-radius:12px;background:color-mix(in srgb,Canvas 92%,var(--goodos-tone-2,#2563eb));color:inherit;font:inherit;cursor:pointer}.goodos-accessibility__sizes button[aria-pressed="true"],.goodos-accessibility__toggle[aria-pressed="true"]{border-color:var(--goodos-tone-2,#2563eb);box-shadow:inset 0 0 0 1px var(--goodos-tone-2,#2563eb);background:color-mix(in srgb,var(--goodos-tone-2,#2563eb) 14%,Canvas)}.goodos-accessibility__toggle{display:flex;width:100%;align-items:center;justify-content:space-between;margin-top:7px;padding:0 12px;text-align:left}.goodos-accessibility__toggle span:last-child{font-size:12px;font-weight:800;color:var(--goodos-tone-2,#2563eb)}.goodos-accessibility__reset{width:100%;margin-top:12px;padding:0 12px;font-weight:750}.goodos-accessibility button:focus-visible{outline:3px solid color-mix(in srgb,var(--goodos-tone-3,#38bdf8) 72%,white);outline-offset:2px}
+.goodos-accessibility{display:flex;width:min(420px,calc(100vw - 24px));max-height:min(760px,calc(100dvh - 124px));padding:0;overflow:hidden;flex-direction:column}.goodos-accessibility__header{padding:16px 16px 0}.goodos-accessibility__tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin:0 16px 14px;padding:4px;border-radius:13px;background:color-mix(in srgb,CanvasText 7%,Canvas)}.goodos-accessibility__tabs button,.goodos-accessibility__choice{min-height:38px;border:1px solid transparent;border-radius:10px;background:transparent;color:inherit;font:700 12px/1 sans-serif;cursor:pointer}.goodos-accessibility__tabs button[aria-selected="true"],.goodos-accessibility__choice[aria-pressed="true"]{border-color:color-mix(in srgb,var(--goodos-tone-2,#2563eb) 48%,transparent);background:color-mix(in srgb,var(--goodos-tone-2,#2563eb) 17%,Canvas);color:var(--goodos-tone-2,#2563eb)}.goodos-accessibility__content{min-height:0;padding:0 16px 16px;overflow-y:auto;overscroll-behavior:contain}.goodos-accessibility__content fieldset+fieldset{margin-top:18px}.goodos-accessibility__choices{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}.goodos-accessibility__choices--two{grid-template-columns:repeat(2,1fr)}.goodos-accessibility__choices .goodos-accessibility__toggle{grid-column:1/-1}.goodos-accessibility__toggle{gap:12px;min-height:54px;padding:8px 12px}.goodos-accessibility__toggle span:first-child{min-width:0}.goodos-accessibility__toggle strong,.goodos-accessibility__toggle small{display:block}.goodos-accessibility__toggle strong{font-size:14px}.goodos-accessibility__toggle small{margin-top:3px;font-size:11px;font-weight:500;line-height:1.3;opacity:.68}.goodos-accessibility__slider{display:block;margin-top:8px;padding:12px;border:1px solid color-mix(in srgb,currentColor 16%,transparent);border-radius:12px;background:color-mix(in srgb,Canvas 92%,var(--goodos-tone-2,#2563eb))}.goodos-accessibility__slider>span{display:flex;align-items:center;justify-content:space-between;gap:12px}.goodos-accessibility__slider strong{font-size:13px}.goodos-accessibility__slider output{font-size:12px;font-weight:800;color:var(--goodos-tone-2,#2563eb)}.goodos-accessibility__slider input{width:100%;margin-top:10px;accent-color:var(--goodos-tone-2,#2563eb)}.goodos-accessibility__footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-top:1px solid color-mix(in srgb,currentColor 12%,transparent)}.goodos-accessibility__footer>span{font-size:11px;opacity:.65}.goodos-accessibility__footer .goodos-accessibility__reset{width:auto;min-width:86px;margin:0}.goodos-accessibility-effect{position:fixed;z-index:2147482997;pointer-events:none}.goodos-accessibility-effect--spotlight{inset:0;background:radial-gradient(circle var(--goodos-mask-radius) at var(--goodos-pointer-x) var(--goodos-pointer-y),transparent 0,transparent 68%,rgba(2,6,23,var(--goodos-mask-opacity)) 100%)}.goodos-accessibility-effect--reading-bar{right:0;left:0;height:48px;border-top:2px solid var(--goodos-tone-3,#38bdf8);border-bottom:2px solid var(--goodos-tone-3,#38bdf8);background:color-mix(in srgb,var(--goodos-tone-3,#38bdf8) 10%,transparent)}.goodos-accessibility-effect--magnifier{width:144px;height:144px;border:4px solid color-mix(in srgb,var(--goodos-tone-3,#38bdf8) 80%,white);border-radius:50%;background:rgba(255,255,255,.08);box-shadow:0 18px 48px rgba(2,6,23,.28);backdrop-filter:contrast(1.5) saturate(1.2)}
+html[data-goodos-grayscale="true"] body>*:not(.goodos-support-bar):not(.goodos-accessibility):not(.goodos-accessibility-effect){filter:grayscale(1)}html[data-goodos-invert-colors="true"] body>*:not(.goodos-support-bar):not(.goodos-accessibility):not(.goodos-accessibility-effect){filter:invert(1) hue-rotate(180deg)}html[data-goodos-color-profile="protanopia"] body>*:not(.goodos-support-bar):not(.goodos-accessibility):not(.goodos-accessibility-effect){filter:saturate(.65) sepia(.12)}html[data-goodos-color-profile="deuteranopia"] body>*:not(.goodos-support-bar):not(.goodos-accessibility):not(.goodos-accessibility-effect){filter:saturate(.62) hue-rotate(-8deg)}html[data-goodos-color-profile="tritanopia"] body>*:not(.goodos-support-bar):not(.goodos-accessibility):not(.goodos-accessibility-effect){filter:saturate(.7) hue-rotate(18deg)}html body{line-height:var(--goodos-ada-line-height,normal);letter-spacing:var(--goodos-ada-letter-spacing,normal);word-spacing:var(--goodos-ada-word-spacing,normal)}html[data-goodos-focus-indicators="true"] :focus-visible{outline:3px solid var(--goodos-tone-3,#38bdf8)!important;outline-offset:3px!important}html[data-goodos-oversized-pointer="true"],html[data-goodos-oversized-pointer="true"] *{cursor:crosshair!important}
+html[data-goodos-text-size="large"]{font-size:112.5%!important}html[data-goodos-text-size="larger"]{font-size:125%!important}html[data-goodos-readable-font="true"] body,html[data-goodos-readable-font="true"] button,html[data-goodos-readable-font="true"] input,html[data-goodos-readable-font="true"] select,html[data-goodos-readable-font="true"] textarea{font-family:Arial,Verdana,sans-serif!important;letter-spacing:.02em!important}html[data-goodos-underline-links="true"] a{text-decoration:underline!important;text-decoration-thickness:2px!important;text-underline-offset:3px!important}html[data-goodos-high-contrast="true"]{filter:contrast(1.2)}html[data-goodos-reduce-motion="true"] *,html[data-goodos-reduce-motion="true"] *::before,html[data-goodos-reduce-motion="true"] *::after{scroll-behavior:auto!important;animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+@media(max-width:600px){.goodos-support-bar{right:50%;bottom:max(10px,env(safe-area-inset-bottom));transform:translateX(50%);gap:5px;padding:5px;border-radius:18px}.goodos-support-bar__action{width:42px;height:42px;flex-basis:42px;border-radius:13px}.goodos-support-bar__action svg{width:21px;height:21px}}
+@media(max-width:600px){.goodos-accessibility{right:50%;bottom:76px;transform:translateX(50%)}}
+@media(max-width:360px){.goodos-support-bar__action{width:40px;height:40px;flex-basis:40px}.goodos-support-bar__action svg{width:20px;height:20px}}
+@media(prefers-reduced-motion:reduce){.goodos-support-bar,.goodos-support-bar__action{transition:none}.goodos-support-bar__action:hover{transform:none}}
+`;
+
+const appearanceCss = String.raw`
+.goodos-appearance{position:fixed;z-index:2147483003;width:min(380px,calc(100vw - 16px));max-height:calc(100dvh - var(--goodos-appearance-top,72px) - 8px);overflow:auto;padding:16px;border:1px solid color-mix(in srgb,var(--goodos-tone-2) 38%,#cbd5e1);border-radius:18px;background:radial-gradient(circle at 95% 0,color-mix(in srgb,var(--goodos-tone-3) 14%,transparent),transparent 34%),radial-gradient(circle at 0 100%,color-mix(in srgb,var(--goodos-tone-2) 10%,transparent),transparent 38%),rgba(248,250,252,.98);color:#0f172a;box-shadow:0 18px 48px color-mix(in srgb,var(--goodos-tone-1) 28%,rgba(2,6,23,.24));font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.dark .goodos-appearance{background:radial-gradient(circle at 95% 0,color-mix(in srgb,var(--goodos-tone-3) 14%,transparent),transparent 34%),radial-gradient(circle at 0 100%,color-mix(in srgb,var(--goodos-tone-2) 12%,transparent),transparent 38%),rgba(17,24,39,.98);color:#f8fafc}.goodos-appearance__head{display:flex;align-items:start;justify-content:space-between;gap:12px}.goodos-appearance__eyebrow{margin:0;background:linear-gradient(90deg,var(--goodos-tone-2),var(--goodos-tone-3));background-clip:text;color:transparent;font-size:9px;font-weight:850;letter-spacing:.2em;text-transform:uppercase}.goodos-appearance h2{margin:5px 0 0;font-size:17px;letter-spacing:-.025em}.goodos-appearance__copy{margin:5px 0 0;color:#64748b;font-size:11px;line-height:1.4}.goodos-appearance__close{display:grid;width:30px;height:30px;flex:0 0 30px;place-items:center;border:1px solid color-mix(in srgb,var(--goodos-tone-2) 28%,#cbd5e1);border-radius:9px;background:color-mix(in srgb,var(--goodos-tone-2) 6%,transparent);color:inherit;cursor:pointer;font-size:18px}.goodos-appearance__label{margin:14px 0 7px;color:#64748b;font-size:9px;font-weight:850;letter-spacing:.17em;text-transform:uppercase}.goodos-appearance__modes{display:grid;grid-template-columns:1fr 1fr;gap:8px}.goodos-appearance__choice{display:flex;min-height:58px;align-items:center;gap:9px;padding:9px;border:1px solid #dbe3ee;border-radius:13px;background:linear-gradient(135deg,#fff,color-mix(in srgb,var(--goodos-tone-3) 5%,#fff));color:#0f172a;cursor:pointer;text-align:left}.dark .goodos-appearance__choice{border-color:#334155;background:linear-gradient(135deg,#1e293b,color-mix(in srgb,var(--goodos-tone-1) 20%,#1e293b));color:#f8fafc}.goodos-appearance__choice[aria-pressed=true]{border-color:var(--goodos-tone-2);background:linear-gradient(135deg,color-mix(in srgb,var(--goodos-tone-2) 15%,#fff),color-mix(in srgb,var(--goodos-tone-3) 12%,#fff));box-shadow:0 0 0 2px color-mix(in srgb,var(--goodos-tone-2) 15%,transparent)}.dark .goodos-appearance__choice[aria-pressed=true]{background:linear-gradient(135deg,color-mix(in srgb,var(--goodos-tone-1) 62%,#111827),color-mix(in srgb,var(--goodos-tone-2) 22%,#1e293b))}.goodos-appearance__choice-icon{display:grid;width:34px;height:34px;flex:0 0 34px;place-items:center;border-radius:10px;background:linear-gradient(145deg,color-mix(in srgb,var(--goodos-tone-3) 18%,#fff),color-mix(in srgb,var(--goodos-tone-2) 9%,#f1f5f9));font-size:18px}.goodos-appearance__choice strong,.goodos-appearance__choice small{display:block}.goodos-appearance__choice strong{font-size:13px}.goodos-appearance__choice small{margin-top:2px;color:#64748b;font-size:10px}.goodos-appearance__schemes{display:grid;gap:6px}.goodos-appearance__scheme{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;min-height:52px;padding:8px 10px;border:1px solid #dbe3ee;border-radius:13px;background:linear-gradient(115deg,color-mix(in srgb,var(--scheme-1) 5%,#fff),color-mix(in srgb,var(--scheme-2) 8%,#fff),color-mix(in srgb,var(--scheme-3) 7%,#fff));color:#0f172a;cursor:pointer;text-align:left;transition:transform 160ms ease,box-shadow 160ms ease,border-color 160ms ease}.dark .goodos-appearance__scheme{border-color:#334155;background:linear-gradient(115deg,color-mix(in srgb,var(--scheme-1) 28%,#1e293b),color-mix(in srgb,var(--scheme-2) 10%,#1e293b),color-mix(in srgb,var(--scheme-3) 8%,#1e293b));color:#f8fafc}.goodos-appearance__scheme:hover{transform:translateX(-2px);border-color:var(--scheme-2);box-shadow:0 8px 22px color-mix(in srgb,var(--scheme-2) 14%,transparent)}.goodos-appearance__scheme[aria-pressed=true]{border-color:var(--scheme-2);background:linear-gradient(115deg,color-mix(in srgb,var(--scheme-1) 12%,#fff),color-mix(in srgb,var(--scheme-2) 16%,#fff),color-mix(in srgb,var(--scheme-3) 14%,#fff));box-shadow:0 0 0 2px color-mix(in srgb,var(--scheme-2) 16%,transparent),0 9px 24px color-mix(in srgb,var(--scheme-2) 14%,transparent)}.dark .goodos-appearance__scheme[aria-pressed=true]{background:linear-gradient(115deg,color-mix(in srgb,var(--scheme-1) 48%,#172033),color-mix(in srgb,var(--scheme-2) 22%,#1e293b),color-mix(in srgb,var(--scheme-3) 16%,#1e293b))}.goodos-appearance__swatches{display:flex}.goodos-appearance__swatches i{width:26px;height:26px;margin-left:-6px;border:2px solid #fff;border-radius:50%;box-shadow:0 3px 9px rgba(2,6,23,.16)}.goodos-appearance__swatches i:first-child{margin-left:0}.goodos-appearance__scheme strong,.goodos-appearance__scheme small{display:block}.goodos-appearance__scheme strong{font-size:12px}.goodos-appearance__scheme small{margin-top:2px;color:#64748b;font-size:9px}.goodos-appearance__check{display:grid;width:24px;height:24px;place-items:center;border:1px solid color-mix(in srgb,var(--scheme-2) 30%,#cbd5e1);border-radius:50%;font-size:11px;font-weight:900}.goodos-appearance__scheme[aria-pressed=true] .goodos-appearance__check{border-color:var(--scheme-2);background:linear-gradient(135deg,var(--scheme-2),var(--scheme-3));color:#fff;box-shadow:0 4px 12px color-mix(in srgb,var(--scheme-2) 28%,transparent)}
+@media(max-width:480px){.goodos-appearance{right:8px!important;left:8px!important;width:auto;max-height:calc(100dvh - var(--goodos-appearance-top,64px) - 8px)}.goodos-appearance__copy,.goodos-appearance__scheme small{display:none}}
+html[data-goodos-scheme] .goodos-command-deck{--professional-accent:var(--goodos-accent);--professional-accent-bright:var(--goodos-accent-strong);--professional-accent-dark:var(--goodos-accent-depth);--professional-accent-soft:var(--goodos-accent-soft);--professional-accent-medium:var(--goodos-accent-medium);--professional-focus:var(--goodos-accent-soft);--mail-grade-violet:var(--goodos-accent);--mail-grade-violet-bright:var(--goodos-accent-strong);--mail-grade-violet-soft:var(--goodos-accent-soft);--gos-violet:var(--goodos-accent);--gos-violet-bright:var(--goodos-accent-strong);--gos-blue:var(--goodos-accent-strong);accent-color:var(--goodos-accent)}
+html.dark[data-goodos-scheme] .goodos-command-deck{background:radial-gradient(circle at 78% -12%,color-mix(in srgb,var(--goodos-accent) 22%,transparent),transparent 34%),radial-gradient(circle at 4% 92%,color-mix(in srgb,var(--goodos-accent-strong) 10%,transparent),transparent 32%),linear-gradient(145deg,color-mix(in srgb,var(--goodos-accent-depth) 42%,#05070b) 0%,#090c12 50%,color-mix(in srgb,var(--goodos-accent-depth) 30%,#05070b) 100%)!important}
+html:not(.dark)[data-goodos-scheme] .goodos-command-deck{background:radial-gradient(circle at 76% -10%,color-mix(in srgb,var(--goodos-accent-strong) 18%,transparent),transparent 34%),radial-gradient(circle at 5% 95%,color-mix(in srgb,var(--goodos-accent) 10%,transparent),transparent 32%),linear-gradient(145deg,color-mix(in srgb,var(--goodos-accent) 5%,#fff),#f8fafc 54%,color-mix(in srgb,var(--goodos-accent-strong) 7%,#fff))!important}
+html[data-goodos-scheme] .goodos-command-header[data-goodos-topbar]{border-color:color-mix(in srgb,var(--goodos-tone-2) 34%,transparent)!important;background:linear-gradient(105deg,color-mix(in srgb,var(--goodos-tone-1) 24%,rgba(7,9,12,.97)),rgba(7,9,12,.96) 48%,color-mix(in srgb,var(--goodos-tone-2) 13%,rgba(7,9,12,.97)))!important}
+html:not(.dark)[data-goodos-scheme] .goodos-command-header[data-goodos-topbar]{background:linear-gradient(105deg,color-mix(in srgb,var(--goodos-tone-3) 8%,rgba(255,255,255,.98)),rgba(255,255,255,.98) 48%,color-mix(in srgb,var(--goodos-tone-2) 6%,rgba(255,255,255,.98)))!important}
+html[data-goodos-scheme] body .goodos-command-header [data-goodos-topbar-brand-mark].goodos-logo-mark{border-color:color-mix(in srgb,var(--goodos-accent-strong) 52%,white)!important;background:linear-gradient(145deg,var(--goodos-accent-strong),var(--goodos-accent))!important;color:#fff!important;box-shadow:0 10px 28px color-mix(in srgb,var(--goodos-accent) 28%,transparent),inset 0 1px rgba(255,255,255,.42)!important}
+html[data-goodos-scheme] .goodos-command-sidebar{border-color:color-mix(in srgb,var(--goodos-tone-2) 22%,transparent)!important;background:radial-gradient(circle at 0 0,color-mix(in srgb,var(--goodos-tone-2) 16%,transparent),transparent 34%),linear-gradient(165deg,color-mix(in srgb,var(--goodos-tone-1) 38%,#090c12),#090c12 55%,color-mix(in srgb,var(--goodos-tone-2) 12%,#090c12))!important}
+html:not(.dark)[data-goodos-scheme] .goodos-command-sidebar{background:radial-gradient(circle at 0 0,color-mix(in srgb,var(--goodos-tone-3) 13%,transparent),transparent 34%),linear-gradient(165deg,color-mix(in srgb,var(--goodos-tone-2) 8%,#fff),#fff 55%,color-mix(in srgb,var(--goodos-tone-3) 6%,#f8fafc))!important}
+html[data-goodos-scheme] .goodos-command-sidebar nav button[class*="bg-indigo"],html[data-goodos-scheme] .goodos-sidebar-launcher,html[data-goodos-scheme] .goodos-command-toolbar button[aria-pressed="true"],html[data-goodos-scheme] .goodos-command-toolbar button[class*="bg-indigo-600"]{border-color:color-mix(in srgb,var(--goodos-tone-2) 40%,transparent)!important;background:linear-gradient(105deg,color-mix(in srgb,var(--goodos-tone-2) 18%,transparent),color-mix(in srgb,var(--goodos-tone-3) 9%,transparent))!important;box-shadow:inset 3px 0 var(--goodos-tone-2),0 8px 22px color-mix(in srgb,var(--goodos-tone-2) 9%,transparent)!important}
+html[data-goodos-scheme] .goodos-topbar__control[data-goodos-topbar-control="theme"]{color:var(--goodos-accent-strong)!important;box-shadow:0 0 0 2px var(--goodos-accent-medium)!important}
+html[data-goodos-scheme] #goodos-pricing{border-color:color-mix(in srgb,var(--goodos-tone-2) 42%,transparent)!important;background:radial-gradient(circle at 92% 8%,color-mix(in srgb,var(--goodos-tone-3) 18%,transparent),transparent 30%),radial-gradient(circle at 4% 92%,color-mix(in srgb,var(--goodos-tone-1) 14%,transparent),transparent 34%),linear-gradient(135deg,color-mix(in srgb,var(--goodos-tone-2) 12%,transparent),color-mix(in srgb,var(--goodos-tone-3) 7%,transparent))!important;box-shadow:0 22px 64px color-mix(in srgb,var(--goodos-tone-2) 13%,transparent),inset 0 1px color-mix(in srgb,var(--goodos-tone-3) 22%,transparent)!important}
+html[data-goodos-scheme] #goodos-pricing button[aria-pressed="true"]{border-color:var(--goodos-tone-2)!important;background:radial-gradient(circle at 90% 5%,color-mix(in srgb,var(--goodos-tone-3) 22%,transparent),transparent 36%),linear-gradient(145deg,color-mix(in srgb,var(--goodos-tone-2) 18%,transparent),color-mix(in srgb,var(--goodos-tone-1) 8%,transparent))!important;box-shadow:0 0 0 2px var(--goodos-accent-soft),0 14px 30px color-mix(in srgb,var(--goodos-tone-2) 13%,transparent)!important}
+html[data-goodos-scheme] .goodos-command-deck [class*="text-indigo-"]{color:var(--goodos-accent-strong)!important}
+html[data-goodos-scheme] .goodos-command-deck [class*="border-indigo-"]{border-color:var(--goodos-accent)!important}
+html[data-goodos-scheme] .goodos-command-deck [class*="bg-indigo-600"]{background-color:var(--goodos-accent)!important}
+html[data-goodos-scheme] .goodos-command-deck :focus-visible{outline-color:var(--goodos-accent)!important;box-shadow:0 0 0 3px var(--goodos-accent-soft)!important}
+html[data-goodos-scheme] button[aria-label*="accessibility" i]{border-color:color-mix(in srgb,var(--goodos-accent) 42%,transparent)!important;background:linear-gradient(135deg,var(--goodos-accent-strong),var(--goodos-accent-depth))!important;box-shadow:0 12px 30px color-mix(in srgb,var(--goodos-accent) 24%,transparent)!important}
+html[data-goodos-scheme] .goodos-appearance{border-color:color-mix(in srgb,var(--goodos-accent) 46%,#cbd5e1);box-shadow:0 18px 48px color-mix(in srgb,var(--goodos-accent-depth) 34%,rgba(2,6,23,.24))}
+/* Refined product-grade appearance surface and application materials. */
+.goodos-appearance{width:min(420px,calc(100vw - 20px));padding:20px;border-radius:24px;border-color:color-mix(in srgb,var(--goodos-tone-2) 24%,#dbe3ee);background:linear-gradient(160deg,rgba(255,255,255,.985),color-mix(in srgb,var(--goodos-tone-3) 4%,rgba(248,250,252,.985)) 55%,color-mix(in srgb,var(--goodos-tone-2) 7%,rgba(255,255,255,.985)));box-shadow:0 28px 80px rgba(15,23,42,.2),0 8px 24px color-mix(in srgb,var(--goodos-tone-2) 12%,transparent),inset 0 1px rgba(255,255,255,.92);backdrop-filter:blur(24px) saturate(1.2)}
+.dark .goodos-appearance{border-color:color-mix(in srgb,var(--goodos-tone-2) 30%,#334155);background:linear-gradient(160deg,rgba(15,23,42,.985),color-mix(in srgb,var(--goodos-tone-1) 20%,rgba(17,24,39,.985)) 55%,color-mix(in srgb,var(--goodos-tone-2) 10%,rgba(15,23,42,.985)));box-shadow:0 28px 80px rgba(0,0,0,.48),0 8px 28px color-mix(in srgb,var(--goodos-tone-2) 18%,transparent),inset 0 1px rgba(255,255,255,.08)}
+.goodos-appearance::before{content:"";position:absolute;inset:0 18px auto;height:3px;border-radius:0 0 999px 999px;background:linear-gradient(90deg,transparent,var(--goodos-tone-2),var(--goodos-tone-3),transparent);opacity:.9}.goodos-appearance__head{position:relative;padding:2px 48px 15px 2px;border-bottom:1px solid color-mix(in srgb,var(--goodos-tone-2) 13%,#e2e8f0)}.dark .goodos-appearance__head{border-color:color-mix(in srgb,var(--goodos-tone-2) 18%,#334155)}.goodos-appearance__eyebrow{font-size:10px;letter-spacing:.24em}.goodos-appearance h2{margin-top:7px;font-size:20px;line-height:1.15;letter-spacing:-.035em}.goodos-appearance__copy{max-width:300px;margin-top:7px;font-size:11.5px;line-height:1.55}.goodos-appearance__close{position:absolute;top:0;right:0;width:34px;height:34px;border-radius:11px;transition:transform 160ms ease,background 160ms ease}.goodos-appearance__close:hover{transform:rotate(6deg);background:color-mix(in srgb,var(--goodos-tone-2) 12%,transparent)}.goodos-appearance__label{margin:17px 0 9px;font-size:9px;letter-spacing:.22em}.goodos-appearance__modes{gap:10px}.goodos-appearance__choice{min-height:66px;padding:11px;border-radius:16px;box-shadow:0 5px 15px rgba(15,23,42,.045);transition:transform 160ms ease,box-shadow 160ms ease,border-color 160ms ease}.goodos-appearance__choice:hover{transform:translateY(-2px);box-shadow:0 10px 24px color-mix(in srgb,var(--goodos-tone-2) 12%,rgba(15,23,42,.08))}.goodos-appearance__choice[aria-pressed=true]{box-shadow:0 0 0 2px color-mix(in srgb,var(--goodos-tone-2) 13%,transparent),0 12px 26px color-mix(in srgb,var(--goodos-tone-2) 13%,transparent)}.goodos-appearance__choice-icon{width:38px;height:38px;flex-basis:38px;border:1px solid color-mix(in srgb,var(--goodos-tone-2) 13%,#e2e8f0);border-radius:12px;box-shadow:inset 0 1px rgba(255,255,255,.8)}.goodos-appearance__choice strong{font-size:14px}.goodos-appearance__choice small{font-size:10.5px}.goodos-appearance__schemes{gap:8px}.goodos-appearance__scheme{position:relative;min-height:62px;padding:10px 12px 10px 14px;border-radius:16px;overflow:hidden;box-shadow:0 4px 14px rgba(15,23,42,.035)}.goodos-appearance__scheme::before{content:"";position:absolute;inset:9px auto 9px 0;width:3px;border-radius:0 4px 4px 0;background:linear-gradient(180deg,var(--scheme-3),var(--scheme-2),var(--scheme-1));opacity:.28;transition:opacity 160ms ease,width 160ms ease}.goodos-appearance__scheme:hover{transform:translateY(-2px);box-shadow:0 12px 28px color-mix(in srgb,var(--scheme-2) 15%,rgba(15,23,42,.08))}.goodos-appearance__scheme[aria-pressed=true]::before{width:5px;opacity:1}.goodos-appearance__scheme[aria-pressed=true]{box-shadow:0 0 0 2px color-mix(in srgb,var(--scheme-2) 13%,transparent),0 14px 30px color-mix(in srgb,var(--scheme-2) 17%,transparent)}.goodos-appearance__swatches{padding-left:2px}.goodos-appearance__swatches i{width:30px;height:30px;margin-left:-8px;border-width:2.5px;box-shadow:0 4px 12px rgba(15,23,42,.18)}.goodos-appearance__scheme strong{font-size:13px;letter-spacing:-.01em}.goodos-appearance__scheme small{margin-top:3px;font-size:9.5px}.goodos-appearance__check{width:27px;height:27px;border-color:color-mix(in srgb,var(--scheme-2) 22%,#cbd5e1);background:rgba(255,255,255,.32);box-shadow:inset 0 1px rgba(255,255,255,.6)}
+html:not(.dark)[data-goodos-scheme] .goodos-command-deck{background:radial-gradient(circle at 72% 0,color-mix(in srgb,var(--goodos-tone-3) 10%,transparent),transparent 28%),linear-gradient(145deg,#f8fafc 0%,#fff 48%,color-mix(in srgb,var(--goodos-tone-2) 4%,#f8fafc) 100%)!important}.dark html[data-goodos-scheme] .goodos-command-deck,html.dark[data-goodos-scheme] .goodos-command-deck{background:radial-gradient(circle at 74% 0,color-mix(in srgb,var(--goodos-tone-3) 18%,transparent),transparent 30%),linear-gradient(145deg,color-mix(in srgb,var(--goodos-tone-1) 32%,#05070b),#090c12 52%,color-mix(in srgb,var(--goodos-tone-2) 10%,#05070b))!important}
+html[data-goodos-scheme] #goodos-pricing{position:relative;overflow:hidden;border-color:color-mix(in srgb,var(--goodos-tone-2) 28%,transparent)!important;background:linear-gradient(145deg,color-mix(in srgb,var(--goodos-tone-1) 7%,transparent),color-mix(in srgb,var(--goodos-tone-3) 5%,transparent))!important;box-shadow:0 24px 70px rgba(15,23,42,.08),0 8px 28px color-mix(in srgb,var(--goodos-tone-2) 9%,transparent),inset 0 1px rgba(255,255,255,.75)!important}
+html[data-goodos-scheme] #goodos-pricing::before{content:"";position:absolute;inset:0 0 auto;height:5px;background:linear-gradient(90deg,var(--goodos-tone-1),var(--goodos-tone-2) 48%,var(--goodos-tone-3));opacity:.9}
+html[data-goodos-scheme] #goodos-pricing button[aria-pressed="true"]{transform:translateY(-3px);border-color:color-mix(in srgb,var(--goodos-tone-2) 65%,transparent)!important;background:linear-gradient(150deg,color-mix(in srgb,var(--goodos-tone-3) 13%,rgba(255,255,255,.75)),color-mix(in srgb,var(--goodos-tone-2) 9%,rgba(255,255,255,.55)))!important;box-shadow:0 18px 40px color-mix(in srgb,var(--goodos-tone-2) 15%,rgba(15,23,42,.1)),inset 0 1px rgba(255,255,255,.9)!important}
+html.dark[data-goodos-scheme] #goodos-pricing button[aria-pressed="true"]{background:linear-gradient(150deg,color-mix(in srgb,var(--goodos-tone-1) 38%,#172033),color-mix(in srgb,var(--goodos-tone-2) 14%,#111827))!important;box-shadow:0 18px 42px color-mix(in srgb,var(--goodos-tone-2) 18%,rgba(0,0,0,.28)),inset 0 1px rgba(255,255,255,.08)!important}
+@media(prefers-reduced-motion:no-preference){html[data-goodos-scheme] #goodos-pricing,html[data-goodos-scheme] .goodos-command-sidebar{background-size:140% 140%,130% 130%,100% 100%;animation:goodos-theme-breathe 14s ease-in-out infinite alternate}@keyframes goodos-theme-breathe{from{background-position:0 0,100% 100%,0 0}to{background-position:12% 7%,88% 92%,0 0}}}
+`;
+
+function UniversalAppearanceMenu({ appName }) {
+  const [open, setOpen] = useState(false);
+  const [appearance, setAppearance] = useState(() => readGoodOSAppearance());
+  const [position, setPosition] = useState({ top: 72, right: 16 });
+
+  useEffect(() => {
+    applyGoodOSAppearance(appearance, { persist: false });
+  }, []);
+
+  useEffect(() => {
+    const openFromTopbar = (event) => {
+      const trigger = event.target?.closest?.('[data-goodos-topbar-control="theme"]');
+      if (!trigger) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const rect = trigger.getBoundingClientRect();
+      setPosition({
+        top: Math.round(rect.bottom + 8),
+        right: Math.max(8, Math.round(window.innerWidth - rect.right)),
+      });
+      setOpen(true);
+    };
+    document.addEventListener("click", openFromTopbar, true);
+    return () => document.removeEventListener("click", openFromTopbar, true);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (event) => event.key === "Escape" && setOpen(false);
+    const onPointer = (event) => {
+      if (!event.target?.closest?.(".goodos-appearance") && !event.target?.closest?.('[data-goodos-topbar-control="theme"]')) setOpen(false);
+    };
+    const onResize = () => setOpen(false);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onResize);
+    document.addEventListener("pointerdown", onPointer, true);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onResize);
+      document.removeEventListener("pointerdown", onPointer, true);
+    };
+  }, [open]);
+
+  const choose = (next) => {
+    const applied = applyGoodOSAppearance({ ...appearance, ...next });
+    setAppearance(applied);
+  };
+
+  if (!open) return createElement("style", { "data-goodos-appearance-styles": "" }, appearanceCss);
+  return createElement(
+    Fragment,
+    null,
+    createElement("style", { "data-goodos-appearance-styles": "" }, appearanceCss),
+    createElement(
+      "section",
+      { className: "goodos-appearance", role: "dialog", "aria-modal": "false", "aria-labelledby": "goodos-appearance-title", style: { top: position.top, right: position.right, "--goodos-appearance-top": `${position.top}px` } },
+      createElement("div", { className: "goodos-appearance__head" },
+        createElement("div", null,
+          createElement("p", { className: "goodos-appearance__eyebrow" }, "Appearance"),
+          createElement("h2", { id: "goodos-appearance-title" }, `Choose how ${appName} looks`),
+          createElement("p", { className: "goodos-appearance__copy" }, "Your display and color choices apply across the complete application on this device."),
+        ),
+        createElement("button", { type: "button", className: "goodos-appearance__close", onClick: () => setOpen(false), "aria-label": "Close appearance settings" }, "×"),
+      ),
+      createElement("p", { className: "goodos-appearance__label" }, "Display mode"),
+      createElement("div", { className: "goodos-appearance__modes" },
+        [["light", "☀", "Day", "Bright workspace"], ["dark", "☾", "Night", "Low-light workspace"]].map(([id, icon, name, description]) =>
+          createElement("button", { key: id, type: "button", className: "goodos-appearance__choice", "aria-pressed": appearance.mode === id, onClick: () => choose({ mode: id }) },
+            createElement("span", { className: "goodos-appearance__choice-icon", "aria-hidden": "true" }, icon),
+            createElement("span", null, createElement("strong", null, name), createElement("small", null, description)),
+          )),
+      ),
+      createElement("p", { className: "goodos-appearance__label" }, "Accent colors"),
+      createElement("div", { className: "goodos-appearance__schemes" },
+        GOODOS_COLOR_SCHEMES.map((scheme) => createElement("button", { key: scheme.id, type: "button", className: "goodos-appearance__scheme", style: { "--scheme-1": scheme.colors[0], "--scheme-2": scheme.colors[1], "--scheme-3": scheme.colors[2] }, "aria-pressed": appearance.scheme === scheme.id, onClick: () => choose({ scheme: scheme.id }) },
+          createElement("span", { className: "goodos-appearance__swatches", "aria-hidden": "true" }, scheme.colors.map((color) => createElement("i", { key: color, style: { background: color } }))),
+          createElement("span", null, createElement("strong", null, scheme.name), createElement("small", null, scheme.description)),
+          createElement("span", { className: "goodos-appearance__check", "aria-hidden": "true" }, appearance.scheme === scheme.id ? "✓" : ""),
+        )),
+      ),
+    ),
   );
 }
 
@@ -511,6 +1317,31 @@ function ProviderMark({ provider }) {
   );
 }
 
+function FingerprintMark({ size = 20 }) {
+  return createElement(
+    "svg",
+    {
+      width: size,
+      height: size,
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: 2,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      "aria-hidden": "true",
+      "data-goodos-passkey-icon": "fingerprint",
+    },
+    createElement("path", { d: "M12 10a2 2 0 0 0-2 2c0 1-.2 2.4-.8 3.5" }),
+    createElement("path", { d: "M14 13.1c0 2.2-.5 4.2-1.5 5.9" }),
+    createElement("path", { d: "M16.8 15.4c.2-1.1.2-2.3.2-3.4a5 5 0 0 0-10 0c0 .6-.1 1.2-.2 1.8" }),
+    createElement("path", { d: "M19.4 17a12 12 0 0 0 .6-5 8 8 0 0 0-16 0c0 1.3-.2 2.6-.7 3.8" }),
+    createElement("path", { d: "M5 20a13 13 0 0 0 2-5.8" }),
+    createElement("path", { d: "M8.9 21a10 10 0 0 0 2.4-6.7" }),
+    createElement("path", { d: "M16.1 20.1a14 14 0 0 0 1-2.7" }),
+  );
+}
+
 function ProviderButton({ provider, label, disabled, onClick, goodos = false, passkey = false }) {
   return createElement(
     "button",
@@ -553,7 +1384,7 @@ export function GoodOSLoginWidget({
   onSetupPasskeyAfterSignInChange,
   passkeyEnrollmentAvailable = false,
   passkeyEnrollmentLoading = false,
-  passkeyEnrollmentLabel = "Set up Touch ID on this Mac",
+  passkeyEnrollmentLabel = "Create a passkey on this device",
   onPasskeyEnroll,
   providerAvailability = {},
   onForgotPassword,
@@ -574,6 +1405,10 @@ export function GoodOSLoginWidget({
   const [mode, setMode] = useState(initialMode);
   const [showPassword, setShowPassword] = useState(false);
   const [nativePasskeyAvailable, setNativePasskeyAvailable] = useState(false);
+  const [nativePasskeyLoading, setNativePasskeyLoading] = useState(false);
+  const [nativePasskeyError, setNativePasskeyError] = useState("");
+  const conditionalPasskeyStarted = useRef(false);
+  const conditionalPasskeyController = useRef(null);
   const loginId = `${String(appName).toLowerCase().replace(/[^a-z0-9]+/g, "-")}-goodos-login`;
   const emailId = `${loginId}-username`;
   const passwordId = `${loginId}-password`;
@@ -594,13 +1429,48 @@ export function GoodOSLoginWidget({
     setNativePasskeyAvailable(goodOSPasskeysSupported());
   }, []);
 
-  const beginPasskeySignIn = () => {
+  useEffect(() => {
+    if (
+      !showPasskey ||
+      conditionalPasskeyStarted.current ||
+      typeof PublicKeyCredential === "undefined" ||
+      typeof PublicKeyCredential.isConditionalMediationAvailable !== "function"
+    ) return undefined;
+    conditionalPasskeyStarted.current = true;
+    const controller = new AbortController();
+    conditionalPasskeyController.current = controller;
+    void PublicKeyCredential.isConditionalMediationAvailable()
+      .then((available) => available
+        ? authenticateWithGoodOSPasskey({ conditional: true, signal: controller.signal })
+        : null)
+      .then((authenticated) => {
+        if (authenticated) window.location.reload();
+      })
+      .catch((reason) => {
+        if (reason?.name !== "AbortError" && reason?.name !== "NotAllowedError") {
+          console.warn("Conditional GoodOS passkey sign-in could not start.", reason);
+        }
+      });
+    return () => controller.abort();
+  }, [showPasskey]);
+
+  const beginPasskeySignIn = async () => {
+    conditionalPasskeyController.current?.abort();
     if (onPasskeySignIn) {
       onPasskeySignIn();
       return;
     }
-    if (typeof window !== "undefined") {
-      window.location.assign(goodOSPasskeyHandoffUrl(window.location.href));
+    setNativePasskeyLoading(true);
+    setNativePasskeyError("");
+    try {
+      await authenticateWithGoodOSPasskey();
+      window.location.reload();
+    } catch (reason) {
+      if (reason?.name !== "AbortError" && reason?.name !== "NotAllowedError") {
+        setNativePasskeyError(reason instanceof Error ? reason.message : "Fingerprint sign-in failed.");
+      }
+    } finally {
+      setNativePasskeyLoading(false);
     }
   };
 
@@ -707,7 +1577,7 @@ export function GoodOSLoginWidget({
                   className: "goodos-login-widget__input",
                   type: "email",
                   inputMode: "email",
-                  autoComplete: "username",
+                  autoComplete: showPasskey ? "username webauthn" : "username",
                   autoCapitalize: "none",
                   spellCheck: false,
                   enterKeyHint: "next",
@@ -737,7 +1607,7 @@ export function GoodOSLoginWidget({
                   name: "password",
                   className: "goodos-login-widget__input",
                   type: showPassword ? "text" : "password",
-                  autoComplete: "current-password",
+                  autoComplete: showPasskey ? "current-password webauthn" : "current-password",
                   enterKeyHint: "go",
                   value: password,
                   onChange: (event) => onPasswordChange?.(event.target.value, event),
@@ -750,16 +1620,16 @@ export function GoodOSLoginWidget({
                   {
                     className: "goodos-login-widget__passkey-trigger",
                     type: "button",
-                    disabled: loading || passkeyLoading,
-                    onClick: beginPasskeySignIn,
-                    "aria-label": passkeyLoading
-                      ? "Waiting for Touch ID or passkey"
-                      : "Sign in with Touch ID or passkey",
-                    title: passkeyLoading
-                      ? "Waiting for Touch ID or passkey"
-                      : "Sign in with Touch ID or passkey",
+                    disabled: loading || passkeyLoading || nativePasskeyLoading,
+                    onClick: () => void beginPasskeySignIn(),
+                    "aria-label": passkeyLoading || nativePasskeyLoading
+                      ? "Waiting for your device passkey"
+                      : "Sign in with a passkey",
+                    title: passkeyLoading || nativePasskeyLoading
+                      ? "Waiting for your device passkey"
+                      : "Sign in with a passkey",
                   },
-                  createElement("span", { "aria-hidden": "true" }, "◎"),
+                  createElement(FingerprintMark, { size: 20 }),
                 ),
                 createElement("button", {
                   className: "goodos-login-widget__toggle",
@@ -782,8 +1652,8 @@ export function GoodOSLoginWidget({
               createElement(
                 "span",
                 { className: "goodos-login-widget__passkey-setup-copy" },
-                createElement("span", null, "Set up Touch ID after signing in"),
-                createElement("small", null, "Verify your account once, then create the passkey immediately."),
+                createElement("span", null, "Create a passkey after signing in"),
+                createElement("small", null, "Use Face ID, Touch ID, Windows Hello, a fingerprint, or your device PIN."),
               ),
             ),
             passkeyEnrollmentAvailable && createElement(
@@ -794,10 +1664,10 @@ export function GoodOSLoginWidget({
                 disabled: loading || passkeyEnrollmentLoading,
                 onClick: onPasskeyEnroll,
               },
-              createElement("span", { "aria-hidden": "true" }, "◎"),
-              passkeyEnrollmentLoading ? "Setting up Touch ID…" : passkeyEnrollmentLabel,
+              createElement(FingerprintMark, { size: 20 }),
+              passkeyEnrollmentLoading ? "Creating passkey…" : passkeyEnrollmentLabel,
             ),
-            error && createElement("div", { className: "goodos-login-widget__error", role: "alert" }, error),
+            (error || nativePasskeyError) && createElement("div", { className: "goodos-login-widget__error", role: "alert" }, error || nativePasskeyError),
             createElement(
               "button",
               { className: "goodos-login-widget__submit", type: "submit", disabled: loading, "data-goodbase-login-submit": "" },
